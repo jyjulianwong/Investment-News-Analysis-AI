@@ -37,5 +37,8 @@ override.tf.json
 *.swp
 *.swo
 
+# Project
+CLAUDE.md
+
 # Lambda build artefacts
 lambda/.build/
