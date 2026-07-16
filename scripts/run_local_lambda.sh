@@ -16,7 +16,7 @@ docker buildx build \
     --platform linux/amd64 \
     --provenance=false \
     --load \
-    -t ina-lambda-local \
+    -t jyjulianwong-ina-lambda-local \
     "$REPO_ROOT/lambda"
 
 docker run --rm \
@@ -31,5 +31,5 @@ docker run --rm \
     -e SSM_TAVILY_PARAM="/jyjulianwong-ina/tavily_api_key" \
     -e PYTHONUNBUFFERED=1 \
     --entrypoint python \
-    ina-lambda-local \
+    jyjulianwong-ina-lambda-local \
     -c "import agent; result = agent.handler({}, None); print('[handler]', result)"
