@@ -1,7 +1,7 @@
 import os
 import io
 import uuid
-from datetime import date, timezone
+from datetime import date, datetime, timezone
 from typing import TypedDict
 
 import boto3
@@ -9,6 +9,14 @@ import markdown
 from weasyprint import HTML
 
 import boto3 as _boto3
+
+
+def _today_utc() -> str:
+    override = os.environ.get("INA_DATETIME_OVERRIDE")
+    if override:
+        return override[:10]
+    return datetime.now(tz=timezone.utc).date().isoformat()
+
 
 # ---------------------------------------------------------------------------
 # AWS clients — reused across warm invocations
@@ -18,7 +26,7 @@ _ssm = boto3.client("ssm", region_name=os.environ["AWS_REGION_NAME"])
 _s3 = boto3.client("s3", region_name=os.environ["AWS_REGION_NAME"])
 
 INPUT_BUCKET = os.environ["AWS_S3_INPUT_BUCKET_NAME"]
-OUTPUT_BUCKET = os.environ["S3_OUTPUT_BUCKET"]
+OUTPUT_BUCKET = os.environ["AWS_S3_OUTPUT_BUCKET_NAME"]
 SSM_OPENROUTER_PARAM = os.environ["SSM_OPENROUTER_PARAM"]
 SSM_TAVILY_PARAM = os.environ["SSM_TAVILY_PARAM"]
 
@@ -157,7 +165,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
 
     # --- Node: Market Analyst ---
     def market_analyst_node(state: AgentState) -> AgentState:
-        today = date.today().isoformat()
+        today = _today_utc()
         snippets_text = "\n\n---\n\n".join(state["snippets"])
         context_parts = [
             f"**Query:** {r['query']}\n**Source:** {r['url']}\n{r['content']}"
@@ -210,7 +218,7 @@ _graph = None
 # ---------------------------------------------------------------------------
 
 def handler(event, context):
-    today = date.today(tz=timezone.utc).isoformat()
+    today = _today_utc()
     print(f"[agent] Starting run for {today}")
 
     snippets = _list_snippets(today)

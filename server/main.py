@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import date, timezone
+from datetime import datetime, timezone
 
 import boto3
 from fastapi import FastAPI, HTTPException
@@ -27,6 +27,13 @@ _s3 = boto3.client(
 )
 _INPUT_BUCKET = os.environ["AWS_S3_INPUT_BUCKET_NAME"]
 
+
+def _today_utc() -> str:
+    override = os.environ.get("INA_DATETIME_OVERRIDE")
+    if override:
+        return override[:10]
+    return datetime.now(tz=timezone.utc).date().isoformat()
+
 _MAX_SNIPPET_CHARS = 10_000
 
 
@@ -46,7 +53,7 @@ class SnippetRequest(BaseModel):
 
 @app.post("/snippets", status_code=200)
 def submit_snippet(body: SnippetRequest):
-    today = date.today(tz=timezone.utc).isoformat()
+    today = _today_utc()
     key = f"input/{today}/{uuid.uuid4()}.txt"
     try:
         _s3.put_object(

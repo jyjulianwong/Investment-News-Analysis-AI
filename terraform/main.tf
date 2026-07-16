@@ -92,7 +92,7 @@ resource "aws_s3_bucket_cors_configuration" "output" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "HEAD"]
-    allowed_origins = [var.client_github_pages_origin]
+    allowed_origins = [var.client_github_pages_origin, "http://localhost:3000"]
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
@@ -242,10 +242,10 @@ resource "aws_lambda_function" "agent" {
   environment {
     variables = {
       AWS_S3_INPUT_BUCKET_NAME  = aws_s3_bucket.input.bucket
-      S3_OUTPUT_BUCKET     = aws_s3_bucket.output.bucket
-      SSM_OPENROUTER_PARAM = aws_ssm_parameter.openrouter_api_key.name
-      SSM_TAVILY_PARAM     = aws_ssm_parameter.tavily_api_key.name
-      AWS_REGION_NAME      = var.aws_region
+      AWS_S3_OUTPUT_BUCKET_NAME = aws_s3_bucket.output.bucket
+      SSM_OPENROUTER_PARAM      = aws_ssm_parameter.openrouter_api_key.name
+      SSM_TAVILY_PARAM          = aws_ssm_parameter.tavily_api_key.name
+      AWS_REGION_NAME           = var.aws_region
     }
   }
 

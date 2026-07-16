@@ -350,25 +350,14 @@ cd server
 uv sync
 AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
   AWS_S3_INPUT_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
-  CLIENT_GITHUB_PAGES_ORIGIN=http://localhost uv run uvicorn main:app --reload
+  CLIENT_GITHUB_PAGES_ORIGIN=http://localhost:3000 uv run uvicorn main:app --reload --port 8000
 ```
 
-### Lambda (local test, no Docker)
+### Lambda
 
-```bash
-# ACCOUNT_ID must be set — see step 1 of Initial Setup
-cd lambda
-uv sync
-AWS_REGION_NAME=eu-west-2 \
-  AWS_S3_INPUT_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
-  S3_OUTPUT_BUCKET="${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
-  SSM_OPENROUTER_PARAM="/jyjulianwong-ina/openrouter_api_key" \
-  SSM_TAVILY_PARAM="/jyjulianwong-ina/tavily_api_key" \
-  AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
-  uv run python -c "import agent; print(agent.handler({}, None))"
-```
+For end-to-end integration testing, use `./scripts/run_local_lambda.sh` — it builds the image and runs the handler in one step with credentials and env vars pre-configured.
 
-### Lambda (Docker build test)
+To test the Lambda runtime interface emulator (RIE) manually instead:
 
 ```bash
 # ACCOUNT_ID must be set — see step 1 of Initial Setup
@@ -377,7 +366,7 @@ docker buildx build --platform linux/amd64 --provenance=false --load -t ina-lamb
 docker run -p 9000:8080 \
   -e AWS_REGION_NAME=eu-west-2 \
   -e "AWS_S3_INPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
-  -e "S3_OUTPUT_BUCKET=${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
+  -e "AWS_S3_OUTPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
   -e "SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key" \
   -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
   -e AWS_ACCESS_KEY_ID=... \
