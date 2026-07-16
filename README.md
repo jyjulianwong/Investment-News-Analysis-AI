@@ -2,6 +2,10 @@
 
 A GitHub Pages web app + AWS serverless stack that aggregates daily news snippets and produces AI-generated investment analysis reports.
 
+## Who is this for?
+
+I make a habit of reading the news on my way to work every morning... but I know nothing about economics. Instead of manually bookmarking news articles, waiting until I am back home, spending time slowly doing the research, and making poorly-educated guesses on what implications it might have to my investment portfolio, I decided to let AI and automation in the cloud do all that for me. In the morning, I "bookmark" important news articles into my system, AI reads them and does its analysis at noon whilst I'm at work, and the summary report is all ready for me to read by the time I leave. Stuck in the same situation as me? (Probably not.) Then, this project is fit for you.
+
 ## Architecture
 
 ```
