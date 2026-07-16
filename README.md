@@ -254,9 +254,9 @@ aws s3 cp "s3://$OUTPUT_BUCKET/output/YYYY-MM-DD/report.pdf" ./report.pdf
 
 ```bash
 aws lambda invoke \
-  --function-name ina-agent \
+  --function-name jyjulianwong-ina-agent \
   --region eu-west-2 \
-  response.json && cat response.json
+  response.json && cat response.json && echo
 ```
 
 ### Update SSM secrets manually
@@ -304,14 +304,14 @@ aws ecr get-login-password --region eu-west-2 | \
 ### Tail Lambda logs
 
 ```bash
-aws logs tail /aws/lambda/ina-agent --follow --region eu-west-2
+aws logs tail /aws/lambda/jyjulianwong-ina-agent --follow --region eu-west-2
 ```
 
 ### Check Lambda function status
 
 ```bash
 aws lambda get-function \
-  --function-name ina-agent \
+  --function-name jyjulianwong-ina-agent \
   --region eu-west-2 \
   --query "Configuration.{State:State,LastUpdateStatus:LastUpdateStatus,ImageUri:Code.ImageUri}"
 ```
