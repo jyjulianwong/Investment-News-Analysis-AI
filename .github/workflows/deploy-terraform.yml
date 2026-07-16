@@ -39,7 +39,13 @@ jobs:
 
       - name: Terraform Init
         working-directory: terraform
-        run: terraform init
+        env:
+          TF_BACKEND_BUCKET: ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-state
+          TF_BACKEND_TABLE:  ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-lock
+        run: |
+          terraform init \
+            -backend-config="bucket=$TF_BACKEND_BUCKET" \
+            -backend-config="dynamodb_table=$TF_BACKEND_TABLE"
 
       - name: Terraform Validate
         working-directory: terraform
@@ -99,7 +105,13 @@ jobs:
 
       - name: Terraform Init
         working-directory: terraform
-        run: terraform init
+        env:
+          TF_BACKEND_BUCKET: ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-state
+          TF_BACKEND_TABLE:  ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-lock
+        run: |
+          terraform init \
+            -backend-config="bucket=$TF_BACKEND_BUCKET" \
+            -backend-config="dynamodb_table=$TF_BACKEND_TABLE"
 
       - name: Terraform Apply
         working-directory: terraform

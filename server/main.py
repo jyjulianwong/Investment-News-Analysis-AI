@@ -14,7 +14,7 @@ _ALLOWED_ORIGIN = os.environ.get("CLIENT_GITHUB_PAGES_ORIGIN", "")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[_ALLOWED_ORIGIN] if _ALLOWED_ORIGIN else [],
+    allow_origins=[_ALLOWED_ORIGIN] if _ALLOWED_ORIGIN else ["*"],
     allow_methods=["POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
@@ -44,7 +44,7 @@ class SnippetRequest(BaseModel):
         return v
 
 
-@app.post("/snippets", status_code=201)
+@app.post("/snippets", status_code=200)
 def submit_snippet(body: SnippetRequest):
     today = date.today(tz=timezone.utc).isoformat()
     key = f"input/{today}/{uuid.uuid4()}.txt"

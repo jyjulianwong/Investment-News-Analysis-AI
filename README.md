@@ -62,14 +62,17 @@ export AWS_PROFILE=ina   # or pass --profile ina to each command
 
 ---
 
-## Initial Setup (run once)
+## Initial Setup
+
+Complete all the following steps on your local development machine first.
 
 ### 1. Find your AWS account ID
 
 All Terraform configs require your account ID so they can refuse to apply against the wrong account.
 
 ```bash
-aws sts get-caller-identity --query Account --output text
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+echo $ACCOUNT_ID
 ```
 
 ### 2. Bootstrap Terraform state infrastructure
@@ -79,17 +82,18 @@ These two resources must exist before any CI/CD run can initialise the S3 backen
 ```bash
 cd terraform/bootstrap
 terraform init
-terraform apply -var="aws_account_id=YOUR_12_DIGIT_ACCOUNT_ID"
-# Creates: jyjulianwong-ina-terraform-state (S3) + jyjulianwong-ina-terraform-lock (DynamoDB)
+terraform apply -var="aws_account_id=$ACCOUNT_ID"
+# Creates: ${ACCOUNT_ID}-jyjulianwong-ina-terraform-state (S3)
+#          jyjulianwong-ina-terraform-lock (DynamoDB)
 ```
 
 Verify with the AWS CLI:
 ```bash
-aws s3 ls | grep jyjulianwong-ina-terraform-state
-aws dynamodb describe-table --table-name jyjulianwong-ina-terraform-lock --query "Table.TableStatus"
+aws s3 ls | grep "${ACCOUNT_ID}-jyjulianwong-ina-terraform-state"
+aws dynamodb describe-table --table-name "${ACCOUNT_ID}-jyjulianwong-ina-terraform-lock" --query "Table.TableStatus"
 ```
 
-### 2. First-time Terraform apply (from local machine)
+### 2. First-time Terraform apply
 
 The Lambda function requires a container image to already exist in ECR before it can be created.
 This means the initial apply must be done in two phases.
@@ -98,10 +102,12 @@ This means the initial apply must be done in two phases.
 
 ```bash
 cd terraform
-terraform init
+terraform init \
+  -backend-config="bucket=${ACCOUNT_ID}-jyjulianwong-ina-terraform-state" \
+  -backend-config="dynamodb_table=jyjulianwong-ina-terraform-lock"
 terraform apply \
   -target=aws_ecr_repository.lambda \
-  -var="aws_account_id=YOUR_12_DIGIT_ACCOUNT_ID" \
+  -var="aws_account_id=$ACCOUNT_ID" \
   -var="openrouter_api_key=YOUR_KEY" \
   -var="tavily_api_key=YOUR_KEY" \
   -var="client_github_pages_origin=https://YOUR_USERNAME.github.io"
@@ -127,7 +133,7 @@ docker buildx build \
 
 ```bash
 terraform apply \
-  -var="aws_account_id=YOUR_12_DIGIT_ACCOUNT_ID" \
+  -var="aws_account_id=$ACCOUNT_ID" \
   -var="openrouter_api_key=YOUR_KEY" \
   -var="tavily_api_key=YOUR_KEY" \
   -var="client_github_pages_origin=https://YOUR_USERNAME.github.io"
@@ -142,13 +148,13 @@ cd terraform
 
 # For GitHub Actions
 terraform output github_actions_access_key_id
-terraform output -raw github_actions_secret_access_key
+terraform output -raw github_actions_secret_access_key && echo
 
-# For the Render server
+# For the Render-hosted server
 terraform output server_access_key_id
-terraform output -raw server_secret_access_key
+terraform output -raw server_secret_access_key && echo
 
-# Convenience: print the output bucket base URL
+# Print the output bucket base URL
 terraform output s3_output_bucket_url
 ```
 
@@ -165,7 +171,7 @@ In your GitHub repository → **Settings → Secrets and variables → Actions**
 | `TAVILY_API_KEY`               | Your Tavily API key (free tier at tavily.com) |
 | `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`         |
 
-### 5. Create and deploy the Render service
+### 5a. Create and deploy the Render service
 
 Render deploys the server automatically on every push to `main` — no GitHub Actions required.
 
@@ -188,17 +194,17 @@ Render deploys the server automatically on every push to `main` — no GitHub Ac
 
 After this initial setup, every push to `main` that touches `server/` will trigger an automatic redeploy.
 
-### 5a. Set Render environment variables
+### 5b. Set Render environment variables
 
 In your Render service dashboard → **Environment**, add:
 
-| Variable                       | Value                                      |
-|--------------------------------|--------------------------------------------|
-| `AWS_ACCESS_KEY_ID`            | Render server IAM user access key ID       |
-| `AWS_SECRET_ACCESS_KEY`        | Render server IAM user secret access key   |
-| `AWS_REGION`                   | `eu-west-2`                                |
-| `AWS_S3_INPUT_BUCKET_NAME`     | `jyjulianwong-ina-news-input`              |
-| `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`      |
+| Variable                       | Value                                             |
+|--------------------------------|---------------------------------------------------|
+| `AWS_ACCESS_KEY_ID`            | Render server IAM user access key ID              |
+| `AWS_SECRET_ACCESS_KEY`        | Render server IAM user secret access key          |
+| `AWS_REGION`                   | `eu-west-2`                                       |
+| `AWS_S3_INPUT_BUCKET_NAME`     | Output of `terraform output s3_input_bucket_name` |
+| `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`             |
 
 Render **start command:**
 ```
@@ -215,11 +221,10 @@ const API_BASE = "https://your-render-app.onrender.com";
 ```
 with your actual Render service URL.
 
-In `client/reports.html`, replace:
-```js
-const S3_BASE = "https://jyjulianwong-ina-news-output.s3.eu-west-2.amazonaws.com";
+In `client/reports.html`, replace the placeholder `S3_BASE` with the value printed by:
+```bash
+terraform output s3_output_bucket_url
 ```
-with the value printed by `terraform output s3_output_bucket_url`.
 
 ### 7. Enable GitHub Pages
 
@@ -232,14 +237,17 @@ In GitHub → **Settings → Pages → Source**, set branch to `gh-pages` and di
 ### Check S3 bucket contents
 
 ```bash
+INPUT_BUCKET=$(terraform -chdir=terraform output -raw s3_input_bucket_name)
+OUTPUT_BUCKET=$(terraform -chdir=terraform output -raw s3_output_bucket_name)
+
 # List today's input snippets
-aws s3 ls s3://jyjulianwong-ina-news-input/input/$(date -u +%Y-%m-%d)/
+aws s3 ls "s3://$INPUT_BUCKET/input/$(date -u +%Y-%m-%d)/"
 
 # List all available reports
-aws s3 ls s3://jyjulianwong-ina-news-output/output/
+aws s3 ls "s3://$OUTPUT_BUCKET/output/"
 
 # Download a specific report locally
-aws s3 cp s3://jyjulianwong-ina-news-output/output/YYYY-MM-DD/report.pdf ./report.pdf
+aws s3 cp "s3://$OUTPUT_BUCKET/output/YYYY-MM-DD/report.pdf" ./report.pdf
 ```
 
 ### Manually trigger the Lambda (for testing)
@@ -314,7 +322,7 @@ aws lambda get-function \
 
 | Time (UTC)  | Event |
 |-------------|-------|
-| Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://jyjulianwong-ina-news-input/input/YYYY-MM-DD/<uuid>.txt` |
+| Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://<input-bucket>/input/YYYY-MM-DD/<uuid>.txt` |
 | 12:00       | EventBridge triggers the Lambda |
 | 12:00–12:15 | Lambda runs the LangGraph pipeline (or generates a no-snippets report if none were submitted) |
 | After 12:15 | User visits the Reports page; today's PDF and Markdown report are available |
@@ -337,20 +345,25 @@ aws lambda get-function \
 ### Server
 
 ```bash
+# ACCOUNT_ID must be set — see step 1 of Initial Setup
 cd server
 uv sync
-AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_S3_INPUT_BUCKET_NAME=jyjulianwong-ina-news-input \
+AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
+  AWS_S3_INPUT_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
   CLIENT_GITHUB_PAGES_ORIGIN=http://localhost uv run uvicorn main:app --reload
 ```
 
 ### Lambda (local test, no Docker)
 
 ```bash
+# ACCOUNT_ID must be set — see step 1 of Initial Setup
 cd lambda
 uv sync
-# Set the required env vars, then invoke the handler directly:
-AWS_REGION_NAME=eu-west-2 AWS_S3_INPUT_BUCKET_NAME=jyjulianwong-ina-news-input S3_OUTPUT_BUCKET=jyjulianwong-ina-news-output \
-  SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key \
+AWS_REGION_NAME=eu-west-2 \
+  AWS_S3_INPUT_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
+  S3_OUTPUT_BUCKET="${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
+  SSM_OPENROUTER_PARAM="/jyjulianwong-ina/openrouter_api_key" \
+  SSM_TAVILY_PARAM="/jyjulianwong-ina/tavily_api_key" \
   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
   uv run python -c "import agent; print(agent.handler({}, None))"
 ```
@@ -358,14 +371,15 @@ AWS_REGION_NAME=eu-west-2 AWS_S3_INPUT_BUCKET_NAME=jyjulianwong-ina-news-input S
 ### Lambda (Docker build test)
 
 ```bash
+# ACCOUNT_ID must be set — see step 1 of Initial Setup
 cd lambda
 docker buildx build --platform linux/amd64 --provenance=false --load -t ina-lambda-test .
 docker run -p 9000:8080 \
   -e AWS_REGION_NAME=eu-west-2 \
-  -e AWS_S3_INPUT_BUCKET_NAME=jyjulianwong-ina-news-input \
-  -e S3_OUTPUT_BUCKET=jyjulianwong-ina-news-output \
-  -e SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key \
-  -e SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key \
+  -e "AWS_S3_INPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
+  -e "S3_OUTPUT_BUCKET=${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
+  -e "SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key" \
+  -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
   -e AWS_ACCESS_KEY_ID=... \
   -e AWS_SECRET_ACCESS_KEY=... \
   ina-lambda-test

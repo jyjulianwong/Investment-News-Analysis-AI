@@ -38,7 +38,9 @@ override.tf.json
 *.swo
 
 # Project
+AGENTS.md
 CLAUDE.md
+TODO.md
 
 # Lambda build artefacts
 lambda/.build/

@@ -14,7 +14,8 @@ provider "aws" {
 }
 
 locals {
-  prefix = var.project
+  global_prefix = "${var.aws_account_id}-${var.project}" # S3 buckets (globally scoped)
+  scoped_prefix = var.project                             # all other resources (account-scoped)
 }
 
 # ---------------------------------------------------------------------------
@@ -22,7 +23,7 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "input" {
-  bucket = "${local.prefix}-news-input"
+  bucket = "${local.global_prefix}-news-input"
 }
 
 resource "aws_s3_bucket_public_access_block" "input" {
@@ -47,7 +48,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "input" {
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "output" {
-  bucket = "${local.prefix}-news-output"
+  bucket = "${local.global_prefix}-news-output"
 }
 
 resource "aws_s3_bucket_public_access_block" "output" {
@@ -102,14 +103,14 @@ resource "aws_s3_bucket_cors_configuration" "output" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ssm_parameter" "openrouter_api_key" {
-  name        = "/${local.prefix}/openrouter_api_key"
+  name        = "/${local.scoped_prefix}/openrouter_api_key"
   type        = "SecureString"
   value       = var.openrouter_api_key
   description = "OpenRouter API key for the Lambda LangGraph agent"
 }
 
 resource "aws_ssm_parameter" "tavily_api_key" {
-  name        = "/${local.prefix}/tavily_api_key"
+  name        = "/${local.scoped_prefix}/tavily_api_key"
   type        = "SecureString"
   value       = var.tavily_api_key
   description = "Tavily Search API key for the Lambda web search step"
@@ -120,7 +121,7 @@ resource "aws_ssm_parameter" "tavily_api_key" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "lambda" {
-  name                 = "${local.prefix}-lambda"
+  name                 = "${local.scoped_prefix}-lambda"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -160,7 +161,7 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "lambda" {
-  name               = "${local.prefix}-lambda-role"
+  name               = "${local.scoped_prefix}-lambda-role"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
@@ -220,7 +221,7 @@ data "aws_iam_policy_document" "lambda_permissions" {
 }
 
 resource "aws_iam_role_policy" "lambda_permissions" {
-  name   = "${local.prefix}-lambda-permissions"
+  name   = "${local.scoped_prefix}-lambda-permissions"
   role   = aws_iam_role.lambda.id
   policy = data.aws_iam_policy_document.lambda_permissions.json
 }
@@ -231,7 +232,7 @@ resource "aws_iam_role_policy" "lambda_permissions" {
 # ---------------------------------------------------------------------------
 
 resource "aws_lambda_function" "agent" {
-  function_name = "${local.prefix}-agent"
+  function_name = "${local.scoped_prefix}-agent"
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.lambda.repository_url}:latest"
@@ -259,14 +260,14 @@ resource "aws_lambda_function" "agent" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_event_rule" "daily_noon" {
-  name                = "${local.prefix}-daily-noon"
+  name                = "${local.scoped_prefix}-daily-noon"
   description         = "Trigger the news analysis Lambda at 12:00 UTC daily"
   schedule_expression = "cron(0 12 * * ? *)"
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {
   rule      = aws_cloudwatch_event_rule.daily_noon.name
-  target_id = "${local.prefix}-lambda"
+  target_id = "${local.scoped_prefix}-lambda"
   arn       = aws_lambda_function.agent.arn
 }
 
@@ -283,7 +284,7 @@ resource "aws_lambda_permission" "eventbridge" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_user" "server" {
-  name = "${local.prefix}-server-user"
+  name = "${local.scoped_prefix}-server-user"
 }
 
 data "aws_iam_policy_document" "server" {
@@ -298,7 +299,7 @@ data "aws_iam_policy_document" "server" {
 }
 
 resource "aws_iam_user_policy" "server" {
-  name   = "${local.prefix}-server-user-policy"
+  name   = "${local.scoped_prefix}-server-user-policy"
   user   = aws_iam_user.server.name
   policy = data.aws_iam_policy_document.server.json
 }
@@ -312,7 +313,7 @@ resource "aws_iam_access_key" "server" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_user" "github_actions" {
-  name = "${local.prefix}-github-actions-user"
+  name = "${local.scoped_prefix}-github-actions-user"
 }
 
 data "aws_iam_policy_document" "github_actions" {
@@ -359,8 +360,8 @@ data "aws_iam_policy_document" "github_actions" {
       "s3:ListBucket",
     ]
     resources = [
-      "arn:aws:s3:::jyjulianwong-ina-terraform-state",
-      "arn:aws:s3:::jyjulianwong-ina-terraform-state/*",
+      "arn:aws:s3:::${local.global_prefix}-terraform-state",
+      "arn:aws:s3:::${local.global_prefix}-terraform-state/*",
     ]
   }
 
@@ -372,7 +373,7 @@ data "aws_iam_policy_document" "github_actions" {
       "dynamodb:PutItem",
       "dynamodb:DeleteItem",
     ]
-    resources = ["arn:aws:dynamodb:${var.aws_region}:*:table/jyjulianwong-ina-terraform-lock"]
+    resources = ["arn:aws:dynamodb:${var.aws_region}:*:table/${local.scoped_prefix}-terraform-lock"]
   }
 
   # Regional Terraform apply permissions
@@ -410,7 +411,7 @@ data "aws_iam_policy_document" "github_actions" {
 }
 
 resource "aws_iam_user_policy" "github_actions" {
-  name   = "${local.prefix}-github-actions-user-policy"
+  name   = "${local.scoped_prefix}-github-actions-user-policy"
   user   = aws_iam_user.github_actions.name
   policy = data.aws_iam_policy_document.github_actions.json
 }
