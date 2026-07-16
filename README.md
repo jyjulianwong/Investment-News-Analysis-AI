@@ -90,7 +90,7 @@ terraform apply -var="aws_account_id=$ACCOUNT_ID"
 Verify with the AWS CLI:
 ```bash
 aws s3 ls | grep "${ACCOUNT_ID}-jyjulianwong-ina-terraform-state"
-aws dynamodb describe-table --table-name "${ACCOUNT_ID}-jyjulianwong-ina-terraform-lock" --query "Table.TableStatus"
+aws dynamodb describe-table --table-name "jyjulianwong-ina-terraform-lock" --query "Table.TableStatus"
 ```
 
 ### 2. First-time Terraform apply

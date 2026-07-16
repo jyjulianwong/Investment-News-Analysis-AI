@@ -41,7 +41,7 @@ jobs:
         working-directory: terraform
         env:
           TF_BACKEND_BUCKET: ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-state
-          TF_BACKEND_TABLE:  ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-lock
+          TF_BACKEND_TABLE:  jyjulianwong-ina-terraform-lock
         run: |
           terraform init \
             -backend-config="bucket=$TF_BACKEND_BUCKET" \
@@ -107,7 +107,7 @@ jobs:
         working-directory: terraform
         env:
           TF_BACKEND_BUCKET: ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-state
-          TF_BACKEND_TABLE:  ${{ secrets.AWS_ACCOUNT_ID }}-jyjulianwong-ina-terraform-lock
+          TF_BACKEND_TABLE:  jyjulianwong-ina-terraform-lock
         run: |
           terraform init \
             -backend-config="bucket=$TF_BACKEND_BUCKET" \
