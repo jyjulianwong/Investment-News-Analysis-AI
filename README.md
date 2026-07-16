@@ -295,7 +295,7 @@ aws ssm get-parameters-by-path \
 aws ecr get-login-password --region eu-west-2 | \
   docker login --username AWS --password-stdin \
   $(aws ecr describe-repositories \
-      --repository-names ina-lambda \
+      --repository-names jyjulianwong-ina-lambda \
       --region eu-west-2 \
       --query "repositories[0].repositoryUri" \
       --output text | sed 's|/.*||')
