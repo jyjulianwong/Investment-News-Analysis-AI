@@ -121,8 +121,9 @@ resource "aws_ssm_parameter" "tavily_api_key" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "lambda" {
-  name                 = "${local.scoped_prefix}-lambda"
+  name                 = "${local.scoped_prefix}-lambda-agent"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -259,15 +260,15 @@ resource "aws_lambda_function" "agent" {
 # EventBridge — daily trigger at 12:00 UTC
 # ---------------------------------------------------------------------------
 
-resource "aws_cloudwatch_event_rule" "daily_noon" {
-  name                = "${local.scoped_prefix}-daily-noon"
-  description         = "Trigger the news analysis Lambda at 12:00 UTC daily"
+resource "aws_cloudwatch_event_rule" "agent_daily_noon" {
+  name                = "${local.scoped_prefix}-agent-daily-noon"
+  description         = "Trigger the '${local.scoped_prefix}-agent' Lambda function at 12:00 UTC daily"
   schedule_expression = "cron(0 12 * * ? *)"
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {
-  rule      = aws_cloudwatch_event_rule.daily_noon.name
-  target_id = "${local.scoped_prefix}-lambda"
+  rule      = aws_cloudwatch_event_rule.agent_daily_noon.name
+  target_id = "${local.scoped_prefix}-lambda-agent"
   arn       = aws_lambda_function.agent.arn
 }
 
@@ -276,7 +277,7 @@ resource "aws_lambda_permission" "eventbridge" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.agent.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.daily_noon.arn
+  source_arn    = aws_cloudwatch_event_rule.agent_daily_noon.arn
 }
 
 # ---------------------------------------------------------------------------

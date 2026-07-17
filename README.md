@@ -299,7 +299,7 @@ aws ssm get-parameters-by-path \
 aws ecr get-login-password --region eu-west-2 | \
   docker login --username AWS --password-stdin \
   $(aws ecr describe-repositories \
-      --repository-names jyjulianwong-ina-lambda \
+      --repository-names jyjulianwong-ina-lambda-agent \
       --region eu-west-2 \
       --query "repositories[0].repositoryUri" \
       --output text | sed 's|/.*||')
@@ -366,7 +366,7 @@ To test the Lambda runtime interface emulator (RIE) manually instead:
 ```bash
 # ACCOUNT_ID must be set — see step 1 of Initial Setup
 cd lambda
-docker buildx build --platform linux/amd64 --provenance=false --load -t ina-lambda-test .
+docker buildx build --platform linux/amd64 --provenance=false --load -t ina-lambda-agent-test .
 docker run -p 9000:8080 \
   -e AWS_REGION_NAME=eu-west-2 \
   -e "AWS_S3_INPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
@@ -375,7 +375,7 @@ docker run -p 9000:8080 \
   -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
   -e AWS_ACCESS_KEY_ID=... \
   -e AWS_SECRET_ACCESS_KEY=... \
-  ina-lambda-test
+  ina-lambda-agent-test
 
 # In a second terminal:
 curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
