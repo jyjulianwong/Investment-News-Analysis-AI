@@ -1,6 +1,6 @@
 [project]
 name = "ina-lambda"
-version = "2026.07.17.0"
+version = "2026.00.00.0"
 requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.35,<1.36",
