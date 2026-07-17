@@ -1,5 +1,8 @@
 FROM --platform=linux/amd64 public.ecr.aws/lambda/python:3.12
 
+ARG INA_VERSION=unknown
+ENV INA_VERSION=${INA_VERSION}
+
 # WeasyPrint system dependencies
 RUN dnf install -y \
     pango \

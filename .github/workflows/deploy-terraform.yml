@@ -80,13 +80,42 @@ jobs:
               body,
             });
 
+  version_bump:
+    name: Calendar Version Bump
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag:     ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bump calver and tag
+        id: bump
+        run: python3 scripts/bump_calver.py
+
+      - name: Push commit and tag
+        run: git push origin HEAD:main --tags
+
   deploy:
     name: Terraform Apply + Lambda Deploy
+    needs: [version_bump]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version_bump.outputs.tag }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -145,11 +174,13 @@ jobs:
         env:
           ECR_URL: ${{ steps.tf_outputs.outputs.ecr_url }}
           IMAGE_TAG: ${{ github.sha }}
+          INA_VERSION: ${{ needs.version_bump.outputs.version }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
             --provenance=false \
             --push \
+            --build-arg INA_VERSION="$INA_VERSION" \
             -t "$ECR_URL:$IMAGE_TAG" \
             -t "$ECR_URL:latest" \
             lambda/
