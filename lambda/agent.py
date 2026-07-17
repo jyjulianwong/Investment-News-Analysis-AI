@@ -1,10 +1,24 @@
 import os
+import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TypedDict
 
 import boto3
+import jinja2
 import markdown
 from weasyprint import HTML
+
+# LangGraph instantiates JsonPlusSerializer without allowed_objects; suppress
+# the pending deprecation until LangGraph fixes it upstream.
+warnings.filterwarnings("ignore", message=r"The default value of `allowed_objects`")
+
+_PROMPTS_ENV = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(Path(__file__).parent / "prompts"),
+    keep_trailing_newline=True,
+    undefined=jinja2.StrictUndefined,
+)
 
 
 def _today_utc() -> str:
@@ -94,7 +108,7 @@ def _md_to_pdf(md_text: str) -> bytes:
 
 
 def _no_snippets_report(day: str) -> str:
-    return f"""# Investment News Analysis — {day}
+    return f"""# Investment News Analysis AI — {day}
 
 ## No Snippets Submitted
 
@@ -112,20 +126,28 @@ to receive a market analysis report for that day.
 
 def _build_graph(openrouter_key: str, tavily_key: str):
     """Build and return the compiled LangGraph graph. Called once per warm start."""
-    from langchain_community.tools.tavily_search import TavilySearchResults
+    from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_openai import ChatOpenAI
+    from langchain_tavily import TavilySearch
     from langgraph.graph import END, StateGraph
 
-    os.environ["TAVILY_API_KEY"] = tavily_key
-
     llm = ChatOpenAI(
-        model="openai/gpt-4o-mini",  # cost-efficient via OpenRouter
+        model=os.environ.get("OPENROUTER_MODEL", "openai/gpt-5.4-nano"),
         openai_api_key=openrouter_key,
         openai_api_base="https://openrouter.ai/api/v1",
-        temperature=0.3,
+        temperature=0.4,
     )
 
-    search_tool = TavilySearchResults(max_results=5)
+    _SYSTEM_PROMPT = _PROMPTS_ENV.get_template("system.j2").render()
+
+    search_tool = TavilySearch(
+        tavily_api_key=tavily_key,
+        max_results=int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
+        search_depth=os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
+        topic=os.environ.get("TAVILY_TOPIC", "finance"),
+        time_range=os.environ.get("TAVILY_TIME_RANGE") or None,
+    )
+    search_workers = int(os.environ.get("TAVILY_SEARCH_WORKERS", "5"))
 
     class AgentState(TypedDict):
         snippets: list[str]
@@ -136,14 +158,10 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     # --- Node: Query Generation ---
     def query_generation_node(state: AgentState) -> AgentState:
         snippets_text = "\n\n---\n\n".join(state["snippets"])
-        prompt = (
-            "You are a financial research assistant. Given the following news snippets, "
-            "generate a list of 5–8 precise web search queries that would help gather "
-            "up-to-date context and data needed to analyse their market and investment implications.\n\n"
-            f"NEWS SNIPPETS:\n{snippets_text}\n\n"
-            "Return ONLY a numbered list of search queries, one per line. No other text."
+        prompt = _PROMPTS_ENV.get_template("query_generation.j2").render(
+            snippets_text=snippets_text
         )
-        response = llm.invoke(prompt)
+        response = llm.invoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)])
         lines = [
             line.lstrip("0123456789. ").strip()
             for line in response.content.strip().splitlines()
@@ -154,15 +172,22 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     # --- Node: Web Search ---
     def web_search_node(state: AgentState) -> AgentState:
         all_results = []
-        for query in state["queries"]:
-            try:
-                results = search_tool.invoke(query)
-                for r in results:
-                    all_results.append(
-                        {"query": query, "content": r.get("content", ""), "url": r.get("url", "")}
-                    )
-            except Exception:
-                pass  # single-query failures should not abort the entire run
+        with ThreadPoolExecutor(max_workers=search_workers) as pool:
+            futures = {pool.submit(search_tool.invoke, {"query": q}): q for q in state["queries"]}
+            for future in as_completed(futures):
+                query = futures[future]
+                try:
+                    result = future.result()
+                    for r in result.get("results", []):
+                        all_results.append(
+                            {
+                                "query": query,
+                                "content": r.get("content", ""),
+                                "url": r.get("url", ""),
+                            }
+                        )
+                except Exception:
+                    pass  # single-query failures should not abort the entire run
         return {**state, "search_results": all_results}
 
     # --- Node: Market Analyst ---
@@ -174,27 +199,13 @@ def _build_graph(openrouter_key: str, tavily_key: str):
             for r in state["search_results"]
         ]
         context_text = "\n\n---\n\n".join(context_parts)
-
-        prompt = (
-            f"You are a senior market analyst producing a daily investment intelligence report dated {today}.\n\n"
-            "You have been provided with:\n"
-            "1. Raw news snippets submitted by the user today.\n"
-            "2. Extended web search context gathered from those snippets.\n\n"
-            "Based on this information, write a thorough Markdown report that covers:\n"
-            "- **Executive Summary**: 3–5 bullet points of the most important insights.\n"
-            "- **Key Themes**: Major macroeconomic or sector themes emerging from the news.\n"
-            "- **Asset Class Outlook** (equities, bonds, commodities, crypto as relevant): "
-            "mid-to-long-term directional views with reasoning.\n"
-            "- **Specific Opportunities & Risks**: Concrete assets, sectors, or geographies "
-            "to watch, with a brief rationale for each.\n"
-            "- **Conclusion**: A short paragraph synthesising the overall market direction.\n\n"
-            "Use Markdown formatting (headings, bullet points, bold). Be analytical and specific. "
-            "Cite sources where relevant using [Source](url) Markdown links.\n\n"
-            f"## NEWS SNIPPETS\n\n{snippets_text}\n\n"
-            f"## WEB CONTEXT\n\n{context_text}"
+        prompt = _PROMPTS_ENV.get_template("market_analyst.j2").render(
+            today=today,
+            snippets_text=snippets_text,
+            context_text=context_text,
         )
-        response = llm.invoke(prompt)
-        report_md = f"# Investment News Analysis — {today}\n\n{response.content.strip()}"
+        response = llm.invoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)])
+        report_md = f"# Investment News Analysis AI — {today}\n\n{response.content.strip()}"
         return {**state, "report": report_md}
 
     # --- Graph assembly ---

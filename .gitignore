@@ -2,11 +2,11 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
-.venv/
-venv/
-env/
+**/dist/
+**/build/
+**/.venv/
+**/venv/
+**/env/
 
 # Terraform
 .terraform/
