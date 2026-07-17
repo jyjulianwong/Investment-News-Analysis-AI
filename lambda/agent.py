@@ -1,14 +1,10 @@
 import os
-import io
-import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import TypedDict
 
 import boto3
 import markdown
 from weasyprint import HTML
-
-import boto3 as _boto3
 
 
 def _today_utc() -> str:
@@ -39,6 +35,7 @@ def _get_secret(param_name: str) -> str:
 # ---------------------------------------------------------------------------
 # S3 helpers
 # ---------------------------------------------------------------------------
+
 
 def _list_snippets(day: str) -> list[str]:
     """Return the text content of every snippet file for the given day (YYYY-MM-DD)."""
@@ -84,6 +81,7 @@ code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
 blockquote { border-left: 4px solid #ccc; margin-left: 0; padding-left: 16px; color: #555; }
 """
 
+
 def _md_to_pdf(md_text: str) -> bytes:
     html_body = markdown.markdown(md_text, extensions=["tables", "fenced_code"])
     full_html = f"<html><head><style>{_PDF_CSS}</style></head><body>{html_body}</body></html>"
@@ -93,6 +91,7 @@ def _md_to_pdf(md_text: str) -> bytes:
 # ---------------------------------------------------------------------------
 # No-snippets fallback report
 # ---------------------------------------------------------------------------
+
 
 def _no_snippets_report(day: str) -> str:
     return f"""# Investment News Analysis — {day}
@@ -110,11 +109,12 @@ to receive a market analysis report for that day.
 # LangGraph pipeline
 # ---------------------------------------------------------------------------
 
+
 def _build_graph(openrouter_key: str, tavily_key: str):
     """Build and return the compiled LangGraph graph. Called once per warm start."""
-    from langchain_openai import ChatOpenAI
     from langchain_community.tools.tavily_search import TavilySearchResults
-    from langgraph.graph import StateGraph, END
+    from langchain_openai import ChatOpenAI
+    from langgraph.graph import END, StateGraph
 
     os.environ["TAVILY_API_KEY"] = tavily_key
 
@@ -158,7 +158,9 @@ def _build_graph(openrouter_key: str, tavily_key: str):
             try:
                 results = search_tool.invoke(query)
                 for r in results:
-                    all_results.append({"query": query, "content": r.get("content", ""), "url": r.get("url", "")})
+                    all_results.append(
+                        {"query": query, "content": r.get("content", ""), "url": r.get("url", "")}
+                    )
             except Exception:
                 pass  # single-query failures should not abort the entire run
         return {**state, "search_results": all_results}
@@ -216,6 +218,7 @@ _graph = None
 # ---------------------------------------------------------------------------
 # Lambda handler
 # ---------------------------------------------------------------------------
+
 
 def handler(event, context):
     today = _today_utc()

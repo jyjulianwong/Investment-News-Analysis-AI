@@ -1,0 +1,49 @@
+repos:
+  - repo: local
+    hooks:
+      - id: jupyter-nbconvert
+        name:  jupyter-nbconvert
+        entry: jupyter nbconvert --clear-output
+        language: system
+        stages: [pre-commit]
+        files: \.ipynb$
+  
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.6.9
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/ninoseki/uv-sort
+    rev: v0.6.0
+    hooks:
+      - id: uv-sort
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.11.1
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [ --fix, --config, lambda/pyproject.toml ]
+      # Run the formatter.
+      - id: ruff-format
+        args: [ --config, lambda/pyproject.toml ]
+  
+  # NOTE: This repo has never previously used pyrefly.
+  # - repo: local
+  #   hooks:
+  #     - id: pyrefly
+  #       name: pyrefly
+  #       entry: pyrefly check --config pyproject.toml
+  #       language: system
+  #       stages: [pre-commit]
+  #       files: \.py$
+
+  # NOTE: This repo has never previously used Terraform.
+  # - repo: https://github.com/antonbabenko/pre-commit-terraform
+  #   rev: v1.86.0
+  #   hooks:
+  #     - id: terraform_fmt
+  #       args:
+  #         - --args=-recursive
