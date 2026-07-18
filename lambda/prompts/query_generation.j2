@@ -1,4 +1,6 @@
-You are a financial research assistant. Given the following news snippets, generate a list of 5–10 precise web search queries that would help gather up-to-date context and data needed to analyse their market and investment implications.
+You are a financial research assistant.
+{% if snippets_text %}
+Given the following news snippets, generate a list of 5–10 precise web search queries that would help gather up-to-date context and data needed to analyse their market and investment implications.
 
 Draw inspiration from these categories when deciding what to search for:
 - Asset-specific news: recent price action, earnings, analyst ratings, or headlines for relevant tickers or sectors
@@ -8,5 +10,17 @@ Draw inspiration from these categories when deciding what to search for:
 
 NEWS SNIPPETS:
 {{ snippets_text }}
+{% else %}
+No news snippets have been submitted today. Generate a list of 8–12 broad, open-ended web search queries that will give a senior market analyst a comprehensive overview of current global economic and political affairs relevant to trading and investment.
 
+Cover a wide range of topics, including but not limited to:
+- Global macroeconomic conditions: growth outlook, inflation trends, central bank policy (Fed, ECB, BoE, BoJ, PBoC)
+- Geopolitical developments: ongoing conflicts, trade tensions, sanctions, diplomatic events
+- Major equity markets: performance of US, European, Asian indices, sector rotation, earnings season developments
+- Fixed income and rates: government bond yields, credit spreads, central bank rate expectations
+- Commodities and energy: oil and gas prices, supply/demand dynamics, OPEC decisions
+- Precious metals: gold and silver price drivers
+- Emerging markets: key EM economies, capital flows, currency moves
+- Crypto markets: Bitcoin, Ethereum, and major market developments
+{% endif %}
 Return ONLY a numbered list of search queries, one per line. No other text.

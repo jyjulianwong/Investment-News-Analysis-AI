@@ -44,7 +44,7 @@ Formatting rules:
 
 ## NEWS SNIPPETS
 
-{{ snippets_text }}
+{% if snippets_text %}{{ snippets_text }}{% else %}*No news snippets were submitted today. Base the analysis entirely on the web research context below.*{% endif %}
 
 ## WEB CONTEXT
 
