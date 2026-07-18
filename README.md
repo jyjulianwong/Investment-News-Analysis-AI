@@ -16,9 +16,10 @@ GitHub Pages Client
                               EventBridge (12:00 UTC daily)
                                         │
                               Lambda container (LangGraph)
-                                ├─ Query Generation Agent  (OpenRouter)
-                                ├─ Web Search Agent        (Tavily)
-                                └─ Market Analyst Agent    (OpenRouter)
+                                ├─ Query Generation    (OpenRouter)
+                                ├─ Web Search          (Tavily, preferred domains first)
+                                ├─ Search Evaluator    (fallback to open search if needed)
+                                └─ Market Analyst      (OpenRouter)
                                         │
                                 S3 output bucket  (output/YYYY-MM-DD/report.{pdf,md})
                                         │

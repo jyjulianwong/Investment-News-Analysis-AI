@@ -125,19 +125,34 @@ def _build_graph(openrouter_key: str, tavily_key: str):
 
     _SYSTEM_PROMPT = _PROMPTS_ENV.get_template("system.j2").render()
 
-    search_tool = TavilySearch(
-        tavily_api_key=tavily_key,
-        max_results=int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
-        search_depth=os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
-        topic=os.environ.get("TAVILY_TOPIC", "finance"),
-        time_range=os.environ.get("TAVILY_TIME_RANGE") or None,
+    _tavily_kwargs = {
+        "tavily_api_key": tavily_key,
+        "max_results": int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
+        "search_depth": os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
+        "topic": os.environ.get("TAVILY_TOPIC", "finance"),
+        "time_range": os.environ.get("TAVILY_TIME_RANGE") or None,
+    }
+    _include_domains_raw = os.environ.get(
+        "TAVILY_INCLUDE_DOMAINS",
+        "reuters.com,apnews.com,cnbc.com,marketwatch.com,investing.com,"
+        "tradingeconomics.com,federalreserve.gov,bis.org,imf.org,"
+        "finance.yahoo.com,theguardian.com",
     )
+    include_domains = [d.strip() for d in _include_domains_raw.split(",") if d.strip()]
+    search_tool_filtered = (
+        TavilySearch(**_tavily_kwargs, include_domains=include_domains) if include_domains else None
+    )
+    search_tool_open = TavilySearch(**_tavily_kwargs)
     search_workers = int(os.environ.get("TAVILY_SEARCH_WORKERS", "5"))
+    min_results = int(os.environ.get("EVALUATOR_MIN_RESULTS", "5"))
+    min_domains = int(os.environ.get("EVALUATOR_MIN_DOMAINS", "3"))
 
     class AgentState(TypedDict):
         snippets: list[str]
         queries: list[str]
         search_results: list[dict]
+        search_attempt: int
+        search_sufficient: bool
         report: str
 
     # --- Node: Query Generation ---
@@ -156,15 +171,17 @@ def _build_graph(openrouter_key: str, tavily_key: str):
 
     # --- Node: Web Search ---
     def web_search_node(state: AgentState) -> AgentState:
-        all_results = []
+        attempt = state["search_attempt"]
+        tool = search_tool_filtered if attempt == 0 and search_tool_filtered else search_tool_open
+        new_results = []
         with ThreadPoolExecutor(max_workers=search_workers) as pool:
-            futures = {pool.submit(search_tool.invoke, {"query": q}): q for q in state["queries"]}
+            futures = {pool.submit(tool.invoke, {"query": q}): q for q in state["queries"]}
             for future in as_completed(futures):
                 query = futures[future]
                 try:
                     result = future.result()
                     for r in result.get("results", []):
-                        all_results.append(
+                        new_results.append(
                             {
                                 "query": query,
                                 "content": r.get("content", ""),
@@ -173,7 +190,28 @@ def _build_graph(openrouter_key: str, tavily_key: str):
                         )
                 except Exception:
                     pass  # single-query failures should not abort the entire run
-        return {**state, "search_results": all_results}
+        return {
+            **state,
+            "search_results": state["search_results"] + new_results,
+            "search_attempt": attempt + 1,
+        }
+
+    # --- Node: Search Evaluator ---
+    def search_evaluator_node(state: AgentState) -> AgentState:
+        results = state["search_results"]
+        unique_domains = {r["url"].split("/")[2] for r in results if r.get("url")}
+        sufficient = len(results) >= min_results and len(unique_domains) >= min_domains
+        print(
+            f"[agent] Search evaluator: {len(results)} results, {len(unique_domains)} domains — {'sufficient' if sufficient else 'insufficient'}"
+        )
+        for d in sorted(unique_domains):
+            print(f"[agent]   {d}")
+        return {**state, "search_sufficient": sufficient}
+
+    def _route_after_evaluation(state: AgentState) -> str:
+        if state["search_sufficient"] or state["search_attempt"] >= 2:
+            return "market_analyst"
+        return "web_search"
 
     # --- Node: Market Analyst ---
     def market_analyst_node(state: AgentState) -> AgentState:
@@ -201,11 +239,17 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     graph = StateGraph(AgentState)
     graph.add_node("query_generation", query_generation_node)
     graph.add_node("web_search", web_search_node)
+    graph.add_node("search_evaluator", search_evaluator_node)
     graph.add_node("market_analyst", market_analyst_node)
 
     graph.set_entry_point("query_generation")
     graph.add_edge("query_generation", "web_search")
-    graph.add_edge("web_search", "market_analyst")
+    graph.add_edge("web_search", "search_evaluator")
+    graph.add_conditional_edges(
+        "search_evaluator",
+        _route_after_evaluation,
+        {"market_analyst": "market_analyst", "web_search": "web_search"},
+    )
     graph.add_edge("market_analyst", END)
 
     return graph.compile()
@@ -238,6 +282,8 @@ def handler(event, context):
         "snippets": snippets,
         "queries": [],
         "search_results": [],
+        "search_attempt": 0,
+        "search_sufficient": False,
         "report": "",
     }
     final_state = _graph.invoke(initial_state)
