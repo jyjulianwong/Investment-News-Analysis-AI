@@ -18,8 +18,15 @@ sed 's|https://investment-news-analysis-ai.onrender.com|http://localhost:8000|g'
 
 cp "$REPO_ROOT/client/reports.html" "$TMP_DIR/reports.html"
 
+for f in favicon.ico favicon.svg favicon-16x16.png favicon-32x32.png \
+          apple-touch-icon.png android-chrome-192x192.png android-chrome-512x512.png \
+          site.webmanifest; do
+    cp "$REPO_ROOT/client/$f" "$TMP_DIR/$f"
+done
+
 echo "[run_local_client] Patched index.html → $TMP_DIR/index.html"
 echo "[run_local_client] Copied  reports.html → $TMP_DIR/reports.html"
+echo "[run_local_client] Copied  favicon assets → $TMP_DIR/"
 echo "[run_local_client] Serving on http://localhost:3000"
 echo "[run_local_client] Make sure run_local_server.sh is running on port 8000"
 echo ""
