@@ -1,7 +1,9 @@
 import os
+import re
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TypedDict
 
@@ -28,6 +30,26 @@ def _today_utc() -> str:
     if override:
         return override[:10]
     return datetime.now(tz=timezone.utc).date().isoformat()
+
+
+def _published_today(published_date: str, today: str) -> bool:
+    """Best-effort check that a source's reported publish date falls on `today`.
+
+    Tavily reports dates either as ISO (`2026-08-03`, optionally with a time
+    component) or RFC 2822 (`Mon, 03 Aug 2026 05:00:00 GMT`). A date we can't
+    parse is treated as unverifiable rather than stale, since the API-level
+    start_date/end_date filter has already constrained the search itself.
+    """
+    if not published_date:
+        return True
+    try:
+        return datetime.fromisoformat(published_date).date().isoformat() == today
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(published_date).date().isoformat() == today
+    except (TypeError, ValueError):
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +127,41 @@ def _md_to_pdf(md_text: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# Citation verification
+# ---------------------------------------------------------------------------
+
+# A link with a bracket instead of a closing paren, e.g. `[Source](https://
+# example.com/page]` — the exact shape of a real malformed citation this
+# pipeline has produced.
+_MALFORMED_LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\]]+)\]")
+_LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\s]+)\)")
+
+
+def _verify_citations(report_md: str, valid_urls: set[str]) -> str:
+    """Repair malformed markdown links and strip any link whose URL wasn't
+    actually returned by search — the model must not get away with a
+    hallucinated or truncated citation."""
+
+    def _fix_malformed(match: re.Match) -> str:
+        text, url = match.group(1), match.group(2)
+        if url in valid_urls:
+            print(f"[agent] Citation verifier: repaired malformed link -> {url}")
+            return f"[{text}]({url})"
+        print(f"[agent] Citation verifier: dropped malformed, unverifiable link -> {url}")
+        return text
+
+    def _check_valid(match: re.Match) -> str:
+        text, url = match.group(1), match.group(2)
+        if url in valid_urls:
+            return match.group(0)
+        print(f"[agent] Citation verifier: dropped unverifiable link -> {url}")
+        return text
+
+    fixed = _MALFORMED_LINK_RE.sub(_fix_malformed, report_md)
+    return _LINK_RE.sub(_check_valid, fixed)
+
+
+# ---------------------------------------------------------------------------
 # LangGraph pipeline
 # ---------------------------------------------------------------------------
 
@@ -125,12 +182,15 @@ def _build_graph(openrouter_key: str, tavily_key: str):
 
     _SYSTEM_PROMPT = _PROMPTS_ENV.get_template("system.j2").render()
 
+    # Recency (start_date/end_date) is deliberately NOT baked into these
+    # kwargs: the tool is built once per warm Lambda container, but "today"
+    # must be evaluated fresh on every invocation. It's passed per-call in
+    # web_search_node instead — see TavilySearchInput.start_date/end_date.
     _tavily_kwargs = {
         "tavily_api_key": tavily_key,
         "max_results": int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
         "search_depth": os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
         "topic": os.environ.get("TAVILY_TOPIC", "finance"),
-        "time_range": os.environ.get("TAVILY_TIME_RANGE") or None,
     }
     _include_domains_raw = os.environ.get(
         "TAVILY_INCLUDE_DOMAINS",
@@ -159,7 +219,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     def query_generation_node(state: AgentState) -> AgentState:
         snippets_text = "\n\n---\n\n".join(state["snippets"])
         prompt = _PROMPTS_ENV.get_template("query_generation.j2").render(
-            snippets_text=snippets_text
+            today=_today_utc(), snippets_text=snippets_text
         )
         response = llm.invoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)])
         lines = [
@@ -171,25 +231,45 @@ def _build_graph(openrouter_key: str, tavily_key: str):
 
     # --- Node: Web Search ---
     def web_search_node(state: AgentState) -> AgentState:
+        today = _today_utc()
         attempt = state["search_attempt"]
         tool = search_tool_filtered if attempt == 0 and search_tool_filtered else search_tool_open
         new_results = []
+        stale_count = 0
         with ThreadPoolExecutor(max_workers=search_workers) as pool:
-            futures = {pool.submit(tool.invoke, {"query": q}): q for q in state["queries"]}
+            futures = {
+                # start_date/end_date pin results to today's calendar date at
+                # the Tavily API level — a tighter, timezone-stable filter
+                # than the rolling 24h "day" time_range window.
+                pool.submit(
+                    tool.invoke, {"query": q, "start_date": today, "end_date": today}
+                ): q
+                for q in state["queries"]
+            }
             for future in as_completed(futures):
                 query = futures[future]
                 try:
                     result = future.result()
                     for r in result.get("results", []):
+                        published_date = r.get("published_date", "")
+                        # Defense in depth: the API-level date filter above should
+                        # already exclude stale results, but drop anything that
+                        # slips through with a clearly non-today publish date.
+                        if not _published_today(published_date, today):
+                            stale_count += 1
+                            continue
                         new_results.append(
                             {
                                 "query": query,
                                 "content": r.get("content", ""),
                                 "url": r.get("url", ""),
+                                "published_date": published_date,
                             }
                         )
                 except Exception:
                     pass  # single-query failures should not abort the entire run
+        if stale_count:
+            print(f"[agent] Web search: dropped {stale_count} result(s) not published today ({today})")
         return {
             **state,
             "search_results": state["search_results"] + new_results,
@@ -218,7 +298,8 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         today = _today_utc()
         snippets_text = "\n\n---\n\n".join(state["snippets"])
         context_parts = [
-            f"**Query:** {r['query']}\n**Source:** {r['url']}\n{r['content']}"
+            f"**Query:** {r['query']}\n**Source:** {r['url']}\n"
+            f"**Published:** {r.get('published_date') or 'unknown'}\n{r['content']}"
             for r in state["search_results"]
         ]
         context_text = "\n\n---\n\n".join(context_parts)
@@ -235,12 +316,18 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         )
         return {**state, "report": report_md}
 
+    # --- Node: Citation Verifier ---
+    def citation_verifier_node(state: AgentState) -> AgentState:
+        valid_urls = {r["url"] for r in state["search_results"] if r.get("url")}
+        return {**state, "report": _verify_citations(state["report"], valid_urls)}
+
     # --- Graph assembly ---
     graph = StateGraph(AgentState)
     graph.add_node("query_generation", query_generation_node)
     graph.add_node("web_search", web_search_node)
     graph.add_node("search_evaluator", search_evaluator_node)
     graph.add_node("market_analyst", market_analyst_node)
+    graph.add_node("citation_verifier", citation_verifier_node)
 
     graph.set_entry_point("query_generation")
     graph.add_edge("query_generation", "web_search")
@@ -250,7 +337,8 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         _route_after_evaluation,
         {"market_analyst": "market_analyst", "web_search": "web_search"},
     )
-    graph.add_edge("market_analyst", END)
+    graph.add_edge("market_analyst", "citation_verifier")
+    graph.add_edge("citation_verifier", END)
 
     return graph.compile()
 
