@@ -2,7 +2,7 @@ import os
 import re
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TypedDict
@@ -32,24 +32,27 @@ def _today_utc() -> str:
     return datetime.now(tz=timezone.utc).date().isoformat()
 
 
-def _published_today(published_date: str, today: str) -> bool:
-    """Best-effort check that a source's reported publish date falls on `today`.
+def _within_days(published_date: str, today: str, max_age_days: int) -> bool:
+    """Best-effort check that a source's reported publish date is recent enough.
 
     Tavily reports dates either as ISO (`2026-08-03`, optionally with a time
     component) or RFC 2822 (`Mon, 03 Aug 2026 05:00:00 GMT`). A date we can't
-    parse is treated as unverifiable rather than stale, since the API-level
-    start_date/end_date filter has already constrained the search itself.
+    parse, or that's missing entirely, is treated as unverifiable rather than
+    stale — Tavily doesn't reliably attach a publish date to every result, and
+    dropping every undated result starves the report of content. `abs()`
+    absorbs the odd result whose metadata timezone makes it look 1 day in the
+    future relative to our UTC `today`.
     """
     if not published_date:
         return True
     try:
-        return datetime.fromisoformat(published_date).date().isoformat() == today
+        published = datetime.fromisoformat(published_date).date()
     except ValueError:
-        pass
-    try:
-        return parsedate_to_datetime(published_date).date().isoformat() == today
-    except (TypeError, ValueError):
-        return True
+        try:
+            published = parsedate_to_datetime(published_date).date()
+        except (TypeError, ValueError):
+            return True
+    return abs((date.fromisoformat(today) - published).days) <= max_age_days
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +185,8 @@ def _build_graph(openrouter_key: str, tavily_key: str):
 
     _SYSTEM_PROMPT = _PROMPTS_ENV.get_template("system.j2").render()
 
-    # Recency (start_date/end_date) is deliberately NOT baked into these
-    # kwargs: the tool is built once per warm Lambda container, but "today"
-    # must be evaluated fresh on every invocation. It's passed per-call in
-    # web_search_node instead — see TavilySearchInput.start_date/end_date.
+    # time_range is deliberately NOT baked into these kwargs: it varies by
+    # search attempt (see web_search_node), so it's passed per-call instead.
     _tavily_kwargs = {
         "tavily_api_key": tavily_key,
         "max_results": int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
@@ -234,16 +235,19 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         today = _today_utc()
         attempt = state["search_attempt"]
         tool = search_tool_filtered if attempt == 0 and search_tool_filtered else search_tool_open
+        # Same-day coverage can be genuinely thin (early in the day, a quiet
+        # news cycle, a narrow query) — pinning every attempt to an exact
+        # calendar-day match risks a starved, fact-free report. Start strict
+        # and widen the recency window on retry, the same way the domain
+        # filter already opens up on retry.
+        time_range = "day" if attempt == 0 else "week"
+        max_age_days = 1 if attempt == 0 else 7
         new_results = []
         stale_count = 0
+        error_count = 0
         with ThreadPoolExecutor(max_workers=search_workers) as pool:
             futures = {
-                # start_date/end_date pin results to today's calendar date at
-                # the Tavily API level — a tighter, timezone-stable filter
-                # than the rolling 24h "day" time_range window.
-                pool.submit(
-                    tool.invoke, {"query": q, "start_date": today, "end_date": today}
-                ): q
+                pool.submit(tool.invoke, {"query": q, "time_range": time_range}): q
                 for q in state["queries"]
             }
             for future in as_completed(futures):
@@ -252,10 +256,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
                     result = future.result()
                     for r in result.get("results", []):
                         published_date = r.get("published_date", "")
-                        # Defense in depth: the API-level date filter above should
-                        # already exclude stale results, but drop anything that
-                        # slips through with a clearly non-today publish date.
-                        if not _published_today(published_date, today):
+                        if not _within_days(published_date, today, max_age_days):
                             stale_count += 1
                             continue
                         new_results.append(
@@ -266,10 +267,16 @@ def _build_graph(openrouter_key: str, tavily_key: str):
                                 "published_date": published_date,
                             }
                         )
-                except Exception:
-                    pass  # single-query failures should not abort the entire run
+                except Exception as exc:
+                    # Single-query failures should not abort the entire run, but
+                    # they must be visible — a silently-swallowed error on every
+                    # query looks identical to "no news today" otherwise.
+                    error_count += 1
+                    print(f"[agent] Web search: query {query!r} failed — {type(exc).__name__}: {exc}")
         if stale_count:
-            print(f"[agent] Web search: dropped {stale_count} result(s) not published today ({today})")
+            print(f"[agent] Web search: dropped {stale_count} result(s) older than {max_age_days}d")
+        if error_count:
+            print(f"[agent] Web search: {error_count}/{len(state['queries'])} quer{'y' if error_count == 1 else 'ies'} failed")
         return {
             **state,
             "search_results": state["search_results"] + new_results,
