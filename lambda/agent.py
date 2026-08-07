@@ -32,27 +32,65 @@ def _today_utc() -> str:
     return datetime.now(tz=timezone.utc).date().isoformat()
 
 
+def _parse_source_date(published_date: str) -> date | None:
+    """Parse a Tavily-reported publish date into a `date`, or None if missing
+    or unparseable. Tavily reports dates either as ISO (`2026-08-03`,
+    optionally with a time component) or RFC 2822 (`Mon, 03 Aug 2026
+    05:00:00 GMT`)."""
+    if not published_date:
+        return None
+    try:
+        return datetime.fromisoformat(published_date).date()
+    except ValueError:
+        try:
+            return parsedate_to_datetime(published_date).date()
+        except (TypeError, ValueError):
+            return None
+
+
 def _within_days(published_date: str, today: str, max_age_days: int) -> bool:
     """Best-effort check that a source's reported publish date is recent enough.
 
-    Tavily reports dates either as ISO (`2026-08-03`, optionally with a time
-    component) or RFC 2822 (`Mon, 03 Aug 2026 05:00:00 GMT`). A date we can't
-    parse, or that's missing entirely, is treated as unverifiable rather than
-    stale — Tavily doesn't reliably attach a publish date to every result, and
-    dropping every undated result starves the report of content. `abs()`
-    absorbs the odd result whose metadata timezone makes it look 1 day in the
-    future relative to our UTC `today`.
+    A date we can't parse, or that's missing entirely, is treated as
+    unverifiable rather than stale — Tavily doesn't reliably attach a publish
+    date to every result, and dropping every undated result starves the
+    report of content. Unverifiable results are instead flagged in the
+    context handed to the analyst (see `_age_label`) so the model can't treat
+    them as confirmed-current evidence. `abs()` absorbs the odd result whose
+    metadata timezone makes it look 1 day in the future relative to our UTC
+    `today`.
     """
-    if not published_date:
+    published = _parse_source_date(published_date)
+    if published is None:
         return True
-    try:
-        published = datetime.fromisoformat(published_date).date()
-    except ValueError:
-        try:
-            published = parsedate_to_datetime(published_date).date()
-        except (TypeError, ValueError):
-            return True
     return abs((date.fromisoformat(today) - published).days) <= max_age_days
+
+
+def _age_label(published_date: str, today: str) -> str:
+    """Human-readable recency annotation for a WEB CONTEXT entry.
+
+    Doing the day-count arithmetic here — rather than leaving it to the
+    model — closes off the failure mode where a report cites a source's
+    actual publish date but gets the "how stale is this" judgment wrong (or,
+    worse, doesn't attempt it and just presents the source as current).
+    """
+    published = _parse_source_date(published_date)
+    if published is None:
+        return (
+            "unknown — Tavily did not return a verifiable publish date for "
+            "this source; do not attribute a specific date to it, and do "
+            "not treat it as confirmed-current evidence"
+        )
+    age_days = (date.fromisoformat(today) - published).days
+    formatted = published.strftime("%b %-d, %Y")
+    if age_days <= 7:
+        return f"{formatted} ({age_days}d ago)"
+    if age_days <= 30:
+        return f"{formatted} ({age_days}d ago — not last-week news; confirm it's still new information, not a restated fact)"
+    if age_days <= 365:
+        return f"{formatted} ({age_days}d ago — STALE; do not present as current evidence for a live or fast-moving claim)"
+    years = age_days / 365
+    return f"{formatted} ({years:.1f} years ago — STALE; background/historical only, must not be cited as current)"
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +177,27 @@ def _md_to_pdf(md_text: str) -> bytes:
 _MALFORMED_LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\]]+)\]")
 _LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\s]+)\)")
 
+# A month name (optionally trailing "?", the model's own uncertainty marker,
+# e.g. "Jun? 2026") followed by an optional day and a 4-digit year, e.g.
+# "June 19, 2023", "Feb 21, 2025", "Jan 2026".
+_LABEL_DATE_RE = re.compile(
+    r"(?i)\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\??\.?"
+    r"(?:\s+\d{1,2}(?:st|nd|rd|th)?,?)?\s*\d{4}\b"
+)
+
+
+def _parse_label_date(text: str) -> date | None:
+    """Parse a date substring matched by `_LABEL_DATE_RE` (e.g. "Jun? 2026",
+    "June 19, 2023") into a `date`, trying both abbreviated and full month
+    names and with/without a day component."""
+    cleaned = re.sub(r"\s+", " ", text.replace("?", "").replace(",", "")).strip()
+    for fmt in ("%b %d %Y", "%B %d %Y", "%b %Y", "%B %Y"):
+        try:
+            return datetime.strptime(cleaned, fmt).date()
+        except ValueError:
+            continue
+    return None
+
 
 def _verify_citations(report_md: str, valid_urls: set[str]) -> str:
     """Repair malformed markdown links and strip any link whose URL wasn't
@@ -162,6 +221,42 @@ def _verify_citations(report_md: str, valid_urls: set[str]) -> str:
 
     fixed = _MALFORMED_LINK_RE.sub(_fix_malformed, report_md)
     return _LINK_RE.sub(_check_valid, fixed)
+
+
+def _repair_citation_dates(report_md: str, published_by_url: dict[str, str]) -> str:
+    """Cross-check the date text inside a citation label against the source's
+    actual Published metadata, correcting or stripping it on mismatch.
+
+    The analyst prompt tells the model to copy the date from the WEB CONTEXT
+    entry's Published line verbatim, but nothing at the prompt layer stops
+    it from instead lifting a date mentioned inside the article body — which
+    is how a citation ends up naming the right outlet but the wrong (often
+    much older) date. This is the same class of fix as `_verify_citations`:
+    don't trust the model's rendering of retrieved data, verify it against
+    what was actually retrieved.
+    """
+
+    def _fix(match: re.Match) -> str:
+        text, url = match.group(1), match.group(2)
+        if url not in published_by_url:
+            return match.group(0)
+        date_match = _LABEL_DATE_RE.search(text)
+        if not date_match:
+            return match.group(0)
+        real_date = _parse_source_date(published_by_url[url])
+        if real_date is None:
+            new_text = (text[: date_match.start()] + text[date_match.end() :]).strip(" ,-")
+            print(f"[agent] Citation verifier: stripped unverifiable date from label -> {text!r}")
+            return f"[{new_text}]({url})" if new_text else f"[{url}]({url})"
+        claimed = _parse_label_date(date_match.group(0))
+        if claimed is not None and (claimed.year, claimed.month) == (real_date.year, real_date.month):
+            return match.group(0)
+        corrected = real_date.strftime("%b %-d, %Y")
+        new_text = text[: date_match.start()] + corrected + text[date_match.end() :]
+        print(f"[agent] Citation verifier: corrected citation date {date_match.group(0)!r} -> {corrected!r}")
+        return f"[{new_text}]({url})"
+
+    return _LINK_RE.sub(_fix, report_md)
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +401,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         snippets_text = "\n\n---\n\n".join(state["snippets"])
         context_parts = [
             f"**Query:** {r['query']}\n**Source:** {r['url']}\n"
-            f"**Published:** {r.get('published_date') or 'unknown'}\n{r['content']}"
+            f"**Published:** {_age_label(r.get('published_date', ''), today)}\n{r['content']}"
             for r in state["search_results"]
         ]
         context_text = "\n\n---\n\n".join(context_parts)
@@ -326,7 +421,12 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     # --- Node: Citation Verifier ---
     def citation_verifier_node(state: AgentState) -> AgentState:
         valid_urls = {r["url"] for r in state["search_results"] if r.get("url")}
-        return {**state, "report": _verify_citations(state["report"], valid_urls)}
+        published_by_url = {
+            r["url"]: r.get("published_date", "") for r in state["search_results"] if r.get("url")
+        }
+        report_md = _verify_citations(state["report"], valid_urls)
+        report_md = _repair_citation_dates(report_md, published_by_url)
+        return {**state, "report": report_md}
 
     # --- Graph assembly ---
     graph = StateGraph(AgentState)
