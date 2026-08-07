@@ -66,6 +66,13 @@ def _within_days(published_date: str, today: str, max_age_days: int) -> bool:
     return abs((date.fromisoformat(today) - published).days) <= max_age_days
 
 
+# Age past which a source is treated as STALE — both in the WEB CONTEXT
+# annotation the analyst reads and in the visible citation flag added to
+# the rendered report (see `_repair_citation_dates`). Shared so the two
+# never drift apart.
+_STALE_AGE_DAYS = 30
+
+
 def _age_label(published_date: str, today: str) -> str:
     """Human-readable recency annotation for a WEB CONTEXT entry.
 
@@ -85,7 +92,7 @@ def _age_label(published_date: str, today: str) -> str:
     formatted = published.strftime("%b %-d, %Y")
     if age_days <= 7:
         return f"{formatted} ({age_days}d ago)"
-    if age_days <= 30:
+    if age_days <= _STALE_AGE_DAYS:
         return f"{formatted} ({age_days}d ago — not last-week news; confirm it's still new information, not a restated fact)"
     if age_days <= 365:
         return f"{formatted} ({age_days}d ago — STALE; do not present as current evidence for a live or fast-moving claim)"
@@ -130,6 +137,44 @@ def _list_snippets(day: str) -> list[str]:
         body = _s3.get_object(Bucket=INPUT_BUCKET, Key=key)["Body"].read().decode("utf-8")
         texts.append(body.strip())
     return texts
+
+
+def _fetch_previous_report(today: str) -> tuple[str, str] | None:
+    """Return (day, markdown) for the most recent report this pipeline
+    produced before `today`, or None if there isn't one yet (first-ever
+    run, or the lookup itself fails).
+
+    This feeds the analyst prompt's cross-report consistency check (see
+    market_analyst.j2 Standard #7) — without it, the model re-derives a
+    causal story from scratch each run and has no way to notice it just
+    flipped its own explanation for the same asset (e.g. gold bullish on
+    falling real yields one day, bullish on rising yields as debt-crisis
+    stress a few days later) since it never sees what it said last time.
+    A lookup failure must not break the report run, so this degrades to
+    "no prior report" rather than raising.
+    """
+    try:
+        paginator = _s3.get_paginator("list_objects_v2")
+        days = set()
+        for page in paginator.paginate(Bucket=OUTPUT_BUCKET, Prefix="output/"):
+            for obj in page.get("Contents", []):
+                parts = obj["Key"].split("/")
+                if len(parts) == 3 and parts[2] == "report.md" and parts[1] < today:
+                    days.add(parts[1])
+        if not days:
+            return None
+        latest_day = max(days)
+        body = (
+            _s3.get_object(Bucket=OUTPUT_BUCKET, Key=f"output/{latest_day}/report.md")["Body"]
+            .read()
+            .decode("utf-8")
+        )
+        return latest_day, body.strip()
+    except Exception as exc:
+        print(
+            f"[agent] Prior-report lookup failed, continuing without it — {type(exc).__name__}: {exc}"
+        )
+        return None
 
 
 def _upload_report(day: str, md_text: str, pdf_bytes: bytes) -> None:
@@ -223,40 +268,133 @@ def _verify_citations(report_md: str, valid_urls: set[str]) -> str:
     return _LINK_RE.sub(_check_valid, fixed)
 
 
-def _repair_citation_dates(report_md: str, published_by_url: dict[str, str]) -> str:
-    """Cross-check the date text inside a citation label against the source's
-    actual Published metadata, correcting or stripping it on mismatch.
+def _repair_citation_dates(report_md: str, published_by_url: dict[str, str], today: str) -> str:
+    """Make every citation's date — and staleness — visible in the report
+    text itself, never something a reader has to click through to discover.
 
-    The analyst prompt tells the model to copy the date from the WEB CONTEXT
-    entry's Published line verbatim, but nothing at the prompt layer stops
-    it from instead lifting a date mentioned inside the article body — which
-    is how a citation ends up naming the right outlet but the wrong (often
-    much older) date. This is the same class of fix as `_verify_citations`:
-    don't trust the model's rendering of retrieved data, verify it against
-    what was actually retrieved.
+    A citation with a real, dated, clickable URL can still launder a
+    9-month-old article as today's evidence if the date only lives at the
+    end of that link. This function is a deterministic backstop, independent
+    of whether the model followed the prompt's citation-date rules:
+    - a label with no date gets one added, from the source's real Published
+      metadata (or an explicit "date unknown" marker);
+    - a label with a wrong or unverifiable date gets corrected or replaced
+      with "date unknown";
+    - any citation older than `_STALE_AGE_DAYS` gets an explicit "· STALE"
+      flag appended to the label, even if the model got the date right —
+      so a reader sees the staleness without needing to do the date math
+      themselves against today's report date.
     """
+
+    def _canonical_suffix(published_date: str) -> str:
+        real_date = _parse_source_date(published_date)
+        if real_date is None:
+            return "date unknown"
+        formatted = real_date.strftime("%b %-d, %Y")
+        age_days = abs((date.fromisoformat(today) - real_date).days)
+        return f"{formatted} · STALE" if age_days > _STALE_AGE_DAYS else formatted
 
     def _fix(match: re.Match) -> str:
         text, url = match.group(1), match.group(2)
         if url not in published_by_url:
             return match.group(0)
-        date_match = _LABEL_DATE_RE.search(text)
-        if not date_match:
-            return match.group(0)
+        canonical = _canonical_suffix(published_by_url[url])
         real_date = _parse_source_date(published_by_url[url])
-        if real_date is None:
-            new_text = (text[: date_match.start()] + text[date_match.end() :]).strip(" ,-")
-            print(f"[agent] Citation verifier: stripped unverifiable date from label -> {text!r}")
-            return f"[{new_text}]({url})" if new_text else f"[{url}]({url})"
+        date_match = _LABEL_DATE_RE.search(text)
+        already_flagged = "stale" in text.lower() or "date unknown" in text.lower()
+
+        if date_match is None:
+            if already_flagged:
+                return match.group(0)
+            new_text = f"{text}, {canonical}"
+            print(f"[agent] Citation verifier: added missing date to label -> {new_text!r}")
+            return f"[{new_text}]({url})"
+
         claimed = _parse_label_date(date_match.group(0))
-        if claimed is not None and (claimed.year, claimed.month) == (real_date.year, real_date.month):
+        matches_real = (
+            real_date is not None
+            and claimed is not None
+            and (claimed.year, claimed.month) == (real_date.year, real_date.month)
+        )
+        if matches_real and (not canonical.endswith("STALE") or already_flagged):
             return match.group(0)
-        corrected = real_date.strftime("%b %-d, %Y")
-        new_text = text[: date_match.start()] + corrected + text[date_match.end() :]
-        print(f"[agent] Citation verifier: corrected citation date {date_match.group(0)!r} -> {corrected!r}")
+
+        new_text = text[: date_match.start()] + canonical + text[date_match.end() :]
+        print(
+            f"[agent] Citation verifier: set citation date/flag {date_match.group(0)!r} -> {canonical!r}"
+        )
         return f"[{new_text}]({url})"
 
     return _LINK_RE.sub(_fix, report_md)
+
+
+# A '%' or '$' sign, "bps", or a multiple like "18x" — the minimum bar for a
+# priced-in check to count as citing an actual number rather than narrative.
+_QUANT_EVIDENCE_RE = re.compile(r"%|\$|\bbps\b|\b\d+(?:\.\d+)?x\b", re.IGNORECASE)
+_NOT_AVAILABLE_RE = re.compile(
+    r"(?i)\bnot available\b|\bno (?:reliable |current )?(?:price|valuation|pricing) data\b|\bunavailable\b"
+)
+_HEADING_RE = re.compile(r"(?m)^#{2,3}\s")
+_BULLET_LINE_RE = re.compile(r"(?m)^- \*\*.+$")
+
+
+def _find_section(report_md: str, heading_pattern: str) -> tuple[int, int] | None:
+    """Locate the body of a `##`/`###` section by heading text, returning
+    (start, end) offsets into `report_md`, or None if the heading isn't
+    present (the model is free to deviate from the exact prompted wording,
+    in which case this check is skipped rather than raising)."""
+    heading_re = re.compile(rf"(?im)^#{{2,3}}\s*(?:\d+\.\s*)?{heading_pattern}\s*$")
+    match = heading_re.search(report_md)
+    if not match:
+        return None
+    start = match.end()
+    next_match = _HEADING_RE.search(report_md, start)
+    return start, (next_match.start() if next_match else len(report_md))
+
+
+def _flag_unquantified_priced_in_checks(report_md: str) -> str:
+    """Deterministic backstop for Standard #3 (priced-in check): flag any
+    Opportunities or 6-month-pick bullet that doesn't cite a concrete number
+    (a price level, %, bps, or multiple) and doesn't explicitly say pricing
+    data wasn't available.
+
+    The model reliably produces narrative that satisfies the section's
+    *shape* — "already being framed as sensitive to yields, implying hedge
+    demand isn't necessarily exhausted" — without doing the actual pricing
+    check the prompt asks for. Rather than trust that prose, scan for the
+    presence of an actual number and flag the bullet in the delivered report
+    when there isn't one, so the gap is visible to the reader instead of
+    silently passing as a completed check.
+    """
+    spans = [
+        s
+        for s in (_find_section(report_md, p) for p in ("Opportunities", "If I had 6 months.*"))
+        if s
+    ]
+    if not spans:
+        return report_md
+
+    flagged = 0
+
+    def _check_bullet(match: re.Match) -> str:
+        nonlocal flagged
+        line = match.group(0)
+        if _QUANT_EVIDENCE_RE.search(line) or _NOT_AVAILABLE_RE.search(line):
+            return line
+        flagged += 1
+        return f"{line} *(⚠ priced-in check not quantified — no price/%/bps figure cited)*"
+
+    pieces = []
+    last_end = 0
+    for start, end in sorted(spans):
+        pieces.append(report_md[last_end:start])
+        pieces.append(_BULLET_LINE_RE.sub(_check_bullet, report_md[start:end]))
+        last_end = end
+    pieces.append(report_md[last_end:])
+    result = "".join(pieces)
+    if flagged:
+        print(f"[agent] Priced-in check verifier: flagged {flagged} unquantified bullet(s)")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -367,11 +505,15 @@ def _build_graph(openrouter_key: str, tavily_key: str):
                     # they must be visible — a silently-swallowed error on every
                     # query looks identical to "no news today" otherwise.
                     error_count += 1
-                    print(f"[agent] Web search: query {query!r} failed — {type(exc).__name__}: {exc}")
+                    print(
+                        f"[agent] Web search: query {query!r} failed — {type(exc).__name__}: {exc}"
+                    )
         if stale_count:
             print(f"[agent] Web search: dropped {stale_count} result(s) older than {max_age_days}d")
         if error_count:
-            print(f"[agent] Web search: {error_count}/{len(state['queries'])} quer{'y' if error_count == 1 else 'ies'} failed")
+            print(
+                f"[agent] Web search: {error_count}/{len(state['queries'])} quer{'y' if error_count == 1 else 'ies'} failed"
+            )
         return {
             **state,
             "search_results": state["search_results"] + new_results,
@@ -405,10 +547,13 @@ def _build_graph(openrouter_key: str, tavily_key: str):
             for r in state["search_results"]
         ]
         context_text = "\n\n---\n\n".join(context_parts)
+        prior_report = _fetch_previous_report(today)
         prompt = _PROMPTS_ENV.get_template("market_analyst.j2").render(
             today=today,
             snippets_text=snippets_text,
             context_text=context_text,
+            prior_report_day=prior_report[0] if prior_report else None,
+            prior_report_text=prior_report[1] if prior_report else None,
         )
         response = llm.invoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)])
         report_md = (
@@ -418,14 +563,15 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         )
         return {**state, "report": report_md}
 
-    # --- Node: Citation Verifier ---
-    def citation_verifier_node(state: AgentState) -> AgentState:
+    # --- Node: Report Verifier ---
+    def report_verifier_node(state: AgentState) -> AgentState:
         valid_urls = {r["url"] for r in state["search_results"] if r.get("url")}
         published_by_url = {
             r["url"]: r.get("published_date", "") for r in state["search_results"] if r.get("url")
         }
         report_md = _verify_citations(state["report"], valid_urls)
-        report_md = _repair_citation_dates(report_md, published_by_url)
+        report_md = _repair_citation_dates(report_md, published_by_url, _today_utc())
+        report_md = _flag_unquantified_priced_in_checks(report_md)
         return {**state, "report": report_md}
 
     # --- Graph assembly ---
@@ -434,7 +580,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     graph.add_node("web_search", web_search_node)
     graph.add_node("search_evaluator", search_evaluator_node)
     graph.add_node("market_analyst", market_analyst_node)
-    graph.add_node("citation_verifier", citation_verifier_node)
+    graph.add_node("report_verifier", report_verifier_node)
 
     graph.set_entry_point("query_generation")
     graph.add_edge("query_generation", "web_search")
@@ -444,8 +590,8 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         _route_after_evaluation,
         {"market_analyst": "market_analyst", "web_search": "web_search"},
     )
-    graph.add_edge("market_analyst", "citation_verifier")
-    graph.add_edge("citation_verifier", END)
+    graph.add_edge("market_analyst", "report_verifier")
+    graph.add_edge("report_verifier", END)
 
     return graph.compile()
 
