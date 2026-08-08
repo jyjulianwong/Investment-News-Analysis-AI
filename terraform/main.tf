@@ -195,19 +195,6 @@ data "aws_iam_policy_document" "lambda_permissions" {
   }
 
   statement {
-    sid    = "ReadOutputBucket"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      aws_s3_bucket.output.arn,
-      "${aws_s3_bucket.output.arn}/*",
-    ]
-  }
-
-  statement {
     sid    = "ReadSSMParams"
     effect = "Allow"
     actions = [

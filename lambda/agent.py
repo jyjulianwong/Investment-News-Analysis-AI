@@ -139,44 +139,6 @@ def _list_snippets(day: str) -> list[str]:
     return texts
 
 
-def _fetch_previous_report(today: str) -> tuple[str, str] | None:
-    """Return (day, markdown) for the most recent report this pipeline
-    produced before `today`, or None if there isn't one yet (first-ever
-    run, or the lookup itself fails).
-
-    This feeds the analyst prompt's cross-report consistency check (see
-    market_analyst.j2 Standard #7) — without it, the model re-derives a
-    causal story from scratch each run and has no way to notice it just
-    flipped its own explanation for the same asset (e.g. gold bullish on
-    falling real yields one day, bullish on rising yields as debt-crisis
-    stress a few days later) since it never sees what it said last time.
-    A lookup failure must not break the report run, so this degrades to
-    "no prior report" rather than raising.
-    """
-    try:
-        paginator = _s3.get_paginator("list_objects_v2")
-        days = set()
-        for page in paginator.paginate(Bucket=OUTPUT_BUCKET, Prefix="output/"):
-            for obj in page.get("Contents", []):
-                parts = obj["Key"].split("/")
-                if len(parts) == 3 and parts[2] == "report.md" and parts[1] < today:
-                    days.add(parts[1])
-        if not days:
-            return None
-        latest_day = max(days)
-        body = (
-            _s3.get_object(Bucket=OUTPUT_BUCKET, Key=f"output/{latest_day}/report.md")["Body"]
-            .read()
-            .decode("utf-8")
-        )
-        return latest_day, body.strip()
-    except Exception as exc:
-        print(
-            f"[agent] Prior-report lookup failed, continuing without it — {type(exc).__name__}: {exc}"
-        )
-        return None
-
-
 def _upload_report(day: str, md_text: str, pdf_bytes: bytes) -> None:
     _s3.put_object(
         Bucket=OUTPUT_BUCKET,
@@ -547,13 +509,10 @@ def _build_graph(openrouter_key: str, tavily_key: str):
             for r in state["search_results"]
         ]
         context_text = "\n\n---\n\n".join(context_parts)
-        prior_report = _fetch_previous_report(today)
         prompt = _PROMPTS_ENV.get_template("market_analyst.j2").render(
             today=today,
             snippets_text=snippets_text,
             context_text=context_text,
-            prior_report_day=prior_report[0] if prior_report else None,
-            prior_report_text=prior_report[1] if prior_report else None,
         )
         response = llm.invoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)])
         report_md = (

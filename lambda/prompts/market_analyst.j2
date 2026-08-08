@@ -32,8 +32,6 @@ Separately, even a *freshly dated* citation can describe an *old story*. If the 
 
 **6. Apply the same rigor to bearish and "no pick" calls.** A recent drawdown is not, by itself, a forward-looking bearish judgment — it's the same restated-price-action error as #2. If you conclude there's no high-confidence pick in either direction, ground that in what would need to change for a view to emerge, not just in what already happened.
 
-**7. Reconcile with your own prior reasoning instead of silently switching it.** Below the WEB CONTEXT is a PRIOR REPORT section (when one exists) — the most recent report this pipeline produced before today. If today's causal explanation for an asset's move (e.g. why gold is bullish) differs from, or contradicts, the mechanism given in that prior report — even if both are individually plausible — say so explicitly: name the shift (e.g. "the driver has shifted from falling real yields to fiscal/debt-stress concerns") or state that both are live and reinforcing. Do not present today's narrative as the settled, singular logic as if the prior framing never existed — an asset can have multiple genuine drivers, but silently picking whichever one today's headlines emphasize is template-filling from today's sources, not analysis. If no PRIOR REPORT is provided, skip this check.
-
 ## CITATION RULES
 
 - Every major claim — including statistics, price moves, policy decisions, earnings figures, and analyst forecasts — **must** be followed by an inline hyperlink in `[Descriptive text](url)` format. The link text must be descriptive (e.g. `[Reuters, Aug 2](url)` or `[IMF World Economic Outlook](url)`) — never use the bare word "Source" as the link text.
@@ -87,10 +85,3 @@ Formatting rules:
 ## WEB CONTEXT
 
 {{ context_text }}
-
-## PRIOR REPORT (for consistency check only — Standard #7)
-
-{% if prior_report_text %}This is the most recent report this pipeline produced, dated {{ prior_report_day }}. It is not new research and must not be cited as evidence for today's claims — use it only to check Standard #7 (do not silently contradict your own prior causal reasoning).
-
-{{ prior_report_text }}
-{% else %}*No prior report is available (this is the first report, or none could be retrieved). Skip Standard #7.*{% endif %}
