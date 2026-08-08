@@ -25,6 +25,7 @@
     }
 
     header {
+      position: relative;
       background: #1a3a5c;
       color: #fff;
       padding: 18px 32px;
@@ -41,6 +42,51 @@
     }
     header nav a:hover { color: #fff; }
     header nav a.active { color: #fff; font-weight: 600; }
+
+    .nav-toggle {
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      width: 24px;
+      height: 18px;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+    .nav-toggle span {
+      display: block;
+      height: 2px;
+      width: 100%;
+      background: #fff;
+      border-radius: 1px;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    .nav-toggle.open span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+    .nav-toggle.open span:nth-child(2) { opacity: 0; }
+    .nav-toggle.open span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+
+    @media (max-width: 600px) {
+      .nav-toggle { display: flex; }
+      header nav {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: #1a3a5c;
+        padding: 8px 32px 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      }
+      header nav.open { display: flex; }
+      header nav a {
+        margin-left: 0;
+        padding: 10px 0;
+        border-top: 1px solid rgba(255,255,255,0.12);
+      }
+      header nav a:first-child { border-top: none; }
+    }
 
     main {
       flex: 1;
@@ -105,7 +151,10 @@
 
 <header>
   <h3>Investment News Analysis AI</h3>
-  <nav>
+  <button id="nav-toggle" class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="site-nav">
+    <span></span><span></span><span></span>
+  </button>
+  <nav id="site-nav">
     <a href="index.html">Submit</a>
     <a href="reports.html" class="active">Reports</a>
   </nav>
@@ -135,6 +184,14 @@
   const errorEl   = document.getElementById("error");
   const emptyEl   = document.getElementById("empty");
   const listEl    = document.getElementById("reports-list");
+  const navToggle = document.getElementById("nav-toggle");
+  const siteNav    = document.getElementById("site-nav");
+
+  navToggle.addEventListener("click", () => {
+    const isOpen = siteNav.classList.toggle("open");
+    navToggle.classList.toggle("open", isOpen);
+    navToggle.setAttribute("aria-expanded", String(isOpen));
+  });
 
   async function loadReports() {
     try {
