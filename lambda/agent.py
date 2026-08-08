@@ -386,7 +386,12 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         "tavily_api_key": tavily_key,
         "max_results": int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
         "search_depth": os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
-        "topic": os.environ.get("TAVILY_TOPIC", "finance"),
+        # "news" is the only Tavily topic that reliably attaches
+        # published_date metadata to results — "finance" and "general" omit
+        # it on most results, which is why staleness/date checks need it.
+        # The curated include_domains list below already does the work of
+        # keeping results finance-relevant, so this doesn't sacrifice much.
+        "topic": os.environ.get("TAVILY_TOPIC", "news"),
     }
     _include_domains_raw = os.environ.get(
         "TAVILY_INCLUDE_DOMAINS",
