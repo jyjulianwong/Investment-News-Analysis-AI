@@ -23,7 +23,7 @@ docker run --rm \
     --platform linux/amd64 \
     -v "$HOME/.aws:/root/.aws:ro" \
     -e AWS_PROFILE="${AWS_PROFILE:-default}" \
-    -e INA_DATETIME_OVERRIDE="2000-01-01" \
+    -e INA_DATETIME_OVERRIDE="2026-08-07" \
     -e AWS_REGION_NAME="eu-west-2" \
     -e AWS_S3_INPUT_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-input" \
     -e AWS_S3_OUTPUT_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-output" \

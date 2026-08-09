@@ -49,28 +49,34 @@ def _parse_source_date(published_date: str) -> date | None:
 
 
 def _within_days(published_date: str, today: str, max_age_days: int) -> bool:
-    """Best-effort check that a source's reported publish date is recent enough.
+    """Best-effort check that a source's reported publish date is recent enough
+    and not from the future.
 
     A date we can't parse, or that's missing entirely, is treated as
     unverifiable rather than stale — Tavily doesn't reliably attach a publish
     date to every result, and dropping every undated result starves the
     report of content. Unverifiable results are instead flagged in the
     context handed to the analyst (see `_age_label`) so the model can't treat
-    them as confirmed-current evidence. `abs()` absorbs the odd result whose
-    metadata timezone makes it look 1 day in the future relative to our UTC
-    `today`.
+    them as confirmed-current evidence.
+
+    The lower bound of -1 absorbs the odd result whose metadata timezone makes
+    it look 1 day in the future relative to our UTC `today`. Anything more
+    than 1 day ahead is rejected — this matters most in backtesting mode
+    (INA_DATETIME_OVERRIDE), where Tavily may otherwise return articles
+    published after the overridden date.
     """
     published = _parse_source_date(published_date)
     if published is None:
         return True
-    return abs((date.fromisoformat(today) - published).days) <= max_age_days
+    days_old = (date.fromisoformat(today) - published).days
+    return -1 <= days_old <= max_age_days
 
 
 # Age past which a source is treated as STALE — both in the WEB CONTEXT
 # annotation the analyst reads and in the visible citation flag added to
 # the rendered report (see `_repair_citation_dates`). Shared so the two
 # never drift apart.
-_STALE_AGE_DAYS = 30
+_STALE_AGE_DAYS = 7
 
 
 def _age_label(published_date: str, today: str) -> str:
@@ -444,6 +450,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         max_age_days = 1 if attempt == 0 else 7
         new_results = []
         stale_count = 0
+        future_count = 0
         error_count = 0
         with ThreadPoolExecutor(max_workers=search_workers) as pool:
             futures = {
@@ -456,6 +463,10 @@ def _build_graph(openrouter_key: str, tavily_key: str):
                     result = future.result()
                     for r in result.get("results", []):
                         published_date = r.get("published_date", "")
+                        parsed = _parse_source_date(published_date)
+                        if parsed is not None and (date.fromisoformat(today) - parsed).days < -1:
+                            future_count += 1
+                            continue
                         if not _within_days(published_date, today, max_age_days):
                             stale_count += 1
                             continue
@@ -475,6 +486,10 @@ def _build_graph(openrouter_key: str, tavily_key: str):
                     print(
                         f"[agent] Web search: query {query!r} failed — {type(exc).__name__}: {exc}"
                     )
+        if future_count:
+            print(
+                f"[agent] Web search: dropped {future_count} result(s) dated after {today} (future — backtesting guard)"
+            )
         if stale_count:
             print(f"[agent] Web search: dropped {stale_count} result(s) older than {max_age_days}d")
         if error_count:
