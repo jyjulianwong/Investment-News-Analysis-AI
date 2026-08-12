@@ -5,6 +5,7 @@ import boto3
 import markdown
 from helpers import PROMPTS_ENV, today_utc
 from nodes.market_analyst import build_market_analyst_node
+from nodes.market_data_search import build_market_data_search_node
 from nodes.query_generation import build_query_generation_node
 from nodes.report_verifier import report_verifier_node
 from nodes.search_evaluator import build_search_evaluator_node, route_after_evaluation
@@ -81,6 +82,7 @@ h2 { color: #2c5f8a; margin-top: 2em; }
 h3 { color: #3a7ab8; }
 code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
 blockquote { border-left: 4px solid #ccc; margin-left: 0; padding-left: 16px; color: #555; }
+.ina-market-data { color: #999; }
 """
 
 
@@ -145,6 +147,7 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     )
     graph.add_node("search_evaluator", build_search_evaluator_node(min_results, min_domains))
     graph.add_node("market_analyst", build_market_analyst_node(llm, system_prompt))
+    graph.add_node("market_data_search", build_market_data_search_node(llm, system_prompt))
     graph.add_node("report_verifier", report_verifier_node)
 
     graph.set_entry_point("query_generation")
@@ -155,7 +158,8 @@ def _build_graph(openrouter_key: str, tavily_key: str):
         route_after_evaluation,
         {"market_analyst": "market_analyst", "web_search": "web_search"},
     )
-    graph.add_edge("market_analyst", "report_verifier")
+    graph.add_edge("market_analyst", "market_data_search")
+    graph.add_edge("market_data_search", "report_verifier")
     graph.add_edge("report_verifier", END)
 
     return graph.compile()

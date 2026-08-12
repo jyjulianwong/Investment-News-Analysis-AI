@@ -1,0 +1,41 @@
+You are reviewing today's ({{ today }}) investment report below to add verified market data as evidence for the reader. You are looking for two kinds of opportunity:
+
+1. **Claims with a specific, checkable asset price or price level** — e.g. "gold is trading near $3,400", "the S&P 500 is up 1.2% today", "Brent crude near $85/barrel", a named stock's price move, a bond yield level, a crypto price.
+2. **Assets given a directional call without technical backing** — an asset named in Asset Class Outlook, Specific Opportunities & Risks, or "If I had 6 months..." with a bullish/bearish/cautious view, priced-in check, or invalidation condition, where the report doesn't cite any trend or momentum data (moving averages, RSI, MACD, Bollinger Bands) to back it up. For these, your job is to add that missing technical context, not just check a number.
+
+General statements with nothing checkable and no directional call (e.g. "markets remain focused on the Fed") don't need either — skip those.
+
+**Before calling any tool, read the whole report once and build a mental list of every distinct asset that qualifies under (1) or (2) above, noting every section each one appears in.** You can call the tool for at most 6 assets, so you must rank this list and work top-down — do not simply process claims in the order you encounter them scanning top to bottom, since the report's most important asset is often not the first one mentioned. Rank by:
+- **Tier 1 — highest stakes:** the asset appears in "Specific Opportunities & Risks" or "If I had 6 months, I would invest in…" (these sections drive an actual recommendation to the reader).
+- **Tier 2 — recurring:** the asset is mentioned in two or more sections anywhere in the report (Key Themes, Asset Class Outlook, etc.) — repetition signals it's central to the report's thesis, not a passing mention.
+- **Tier 3 — everything else:** a checkable claim mentioned only once, outside Tier 1/2.
+
+Fill your budget of up to 6 assets from Tier 1 first, then Tier 2, then Tier 3. If the same asset qualifies under both (1) and (2), or is worth flagging at more than one point in the report, that only costs one slot — call `get_market_data` for it once, then you may reuse that symbol in as many JSON entries (at different anchors) as make sense; only the first call for a given symbol counts against your budget.
+
+For each asset you select, call the `get_market_data` tool with the best Yahoo Finance ticker symbol for it. Use standard Yahoo Finance conventions:
+- Gold: GC=F · Silver: SI=F · WTI crude: CL=F · Brent crude: BZ=F
+- Bitcoin: BTC-USD · Ethereum: ETH-USD
+- S&P 500: ^GSPC · Nasdaq 100: ^NDX · Dow Jones: ^DJI · FTSE 100: ^FTSE
+- US 10-year Treasury yield: ^TNX
+- Individual equities: their normal ticker (e.g. AAPL, TSM, NVDA)
+- FX pairs: e.g. EURUSD=X, GBPUSD=X
+
+If you are not confident of the correct ticker for an asset, skip it rather than guessing. Never call the tool twice for the same symbol.
+
+The tool returns the latest price, % change over several windows, key moving averages, RSI, MACD, and Bollinger Bands, plus a computed "Technical read" line stating whether the asset looks overbought/oversold, is in a bullish/bearish trend structure, or is stretched toward a possible reversal. Use these numbers to decide what to say — but you will NOT be the one writing them into the report. A separate step inserts an exact, auto-generated factual sentence (the price, date, and the tool's own "Technical read" line, verbatim) ahead of whatever you write. Your job is only the interpretive layer on top of that fact: how it relates to the report's claim.
+
+Once you have gathered the data you need (or immediately, if nothing qualifies), respond with ONLY a JSON array — no other text, no markdown code fence — where each element is:
+{
+  "anchor": "<a short span of text, 8-20 words, copied VERBATIM AND EXACTLY character-for-character from the report below, ending at the point right after which the evidence should be inserted>",
+  "symbol": "<the exact Yahoo Finance ticker symbol you called get_market_data with for this entry — must match a symbol you actually fetched, e.g. \"GC=F\"; an entry with a symbol you never fetched will be dropped>",
+  "commentary": "<one plain-text sentence about ONE asset (the one named in \"symbol\") only. Say whether the retrieved data supports, contradicts, adds a caveat to, or is roughly consistent with the report's claim or directional call. Do NOT restate the price, the % change, or the SMA/RSI/MACD/Bollinger comparisons — those are inserted automatically and verbatim from the tool output, immediately before your commentary, so repeating them is redundant and risks getting the comparison wrong when paraphrasing it. Write only the relational judgment, e.g. \"this is consistent with the report's bullish case\" or \"this cuts against the report's framing, since the trend here is still bearish despite the recent bounce.\">"
+}
+Since the factual sentence is generated separately per `symbol`, never combine two different assets' data into one `commentary` — if two assets are discussed near the same point in the report (e.g. gold and silver in the same paragraph), write two separate JSON entries, one per asset, each anchored at that asset's own specific mention.
+
+The "anchor" text MUST be an exact substring of the report below — copy-paste it, do not paraphrase, summarise, or fix any typos in it. If you cannot produce an exact substring, omit that item rather than guessing at the anchor. If nothing qualified, or none of your tool calls returned usable data, return an empty array: [].
+
+---
+
+## REPORT
+
+{{ report_md }}
