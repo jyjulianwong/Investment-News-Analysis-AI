@@ -7,7 +7,7 @@ from email.header import decode_header, make_header
 from email.message import Message
 from email.utils import parsedate_to_datetime
 
-from email_adapter.base import MailMessage, MailProvider
+from email_providers.base import EmailMessage, EmailProvider
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RUN_RE = re.compile(r"[ \t]+")
@@ -63,7 +63,7 @@ def _extract_body(msg: Message) -> str:
     return ""
 
 
-def _parse_message(raw: bytes, sender: str) -> MailMessage:
+def _parse_message(raw: bytes, sender: str) -> EmailMessage:
     msg = email.message_from_bytes(raw)
     date_header = msg.get("Date")
     received_at = (
@@ -71,7 +71,7 @@ def _parse_message(raw: bytes, sender: str) -> MailMessage:
     )
     if received_at.tzinfo is None:
         received_at = received_at.replace(tzinfo=timezone.utc)
-    return MailMessage(
+    return EmailMessage(
         sender=sender,
         subject=_decode_header_value(msg.get("Subject")),
         received_at=received_at.astimezone(timezone.utc),
@@ -79,7 +79,7 @@ def _parse_message(raw: bytes, sender: str) -> MailMessage:
     )
 
 
-class ImapMailProvider(MailProvider):
+class ImapEmailProvider(EmailProvider):
     """IMAP4 + password adapter.
 
     Works against Gmail (with an App Password, since Gmail no longer
@@ -96,7 +96,9 @@ class ImapMailProvider(MailProvider):
         self._password = password
         self._mailbox = mailbox
 
-    def fetch_latest_from(self, sender: str, before: date | None = None) -> MailMessage | None:
+    def fetch_latest_from(
+        self, sender: str, before: date | None = None, count: int = 1
+    ) -> list[EmailMessage]:
         with imaplib.IMAP4_SSL(self._host, self._port) as conn:
             conn.login(self._username, self._password)
             status, _ = conn.select(self._mailbox, readonly=True)
@@ -118,18 +120,21 @@ class ImapMailProvider(MailProvider):
             if status != "OK":
                 raise RuntimeError(f"IMAP SEARCH for {sender!r} failed: {status}")
             if not data or not data[0]:
-                return None
+                return []
 
             # IMAP SEARCH returns UIDs in ascending order, so the mailbox's
             # most recently received match is last — walk backwards from
-            # there, fetching full messages only as needed, until one's
-            # actual Date: header satisfies `before`.
+            # there, fetching full messages only as needed, collecting up to
+            # `count` whose actual Date: header satisfies `before`.
+            messages: list[EmailMessage] = []
             for uid in reversed(data[0].split()):
+                if len(messages) >= count:
+                    break
                 status, msg_data = conn.fetch(uid, "(RFC822)")
                 if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
                     raise RuntimeError(f"IMAP FETCH for uid {uid!r} failed: {status}")
                 message = _parse_message(msg_data[0][1], sender)
                 if before is None or message.received_at.date() <= before:
-                    return message
+                    messages.append(message)
 
-        return None
+        return messages

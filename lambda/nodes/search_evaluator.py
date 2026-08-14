@@ -7,9 +7,16 @@ from state import AgentState
 def _domain(url: str) -> str:
     # Web search results are usually http(s), where netloc is the domain.
     # Sources like email_newsletter_search's `mailto:` URLs have no netloc —
-    # fall back to the full URL so they still count as one distinct source
-    # instead of raising (a bare `.split("/")[2]` would IndexError on those).
-    return urlparse(url).netloc or url
+    # fall back to path (a bare `.split("/")[2]` would IndexError on those).
+    # Using `.path` rather than the full url matters now that a single
+    # newsletter sender can contribute several messages (up to its
+    # configured count — see EMAIL_NEWSLETTER_SENDERS in agent.py), each
+    # with a distinct fragment identifying that message (see
+    # `_as_search_result` in nodes/email_newsletter_search.py): `.path` is
+    # just the mailbox address, shared across those messages, so they still
+    # count as one source for diversity purposes rather than one per email.
+    parsed = urlparse(url)
+    return parsed.netloc or parsed.path or url
 
 
 def build_search_evaluator_node(

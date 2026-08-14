@@ -39,6 +39,26 @@ def _get_secret(param_name: str) -> str:
     return resp["Parameter"]["Value"]
 
 
+def _parse_newsletter_senders(raw: str, default_count: int) -> list[tuple[str, int]]:
+    """Parse `EMAIL_NEWSLETTER_SENDERS` into `(address, count)` pairs.
+
+    Each comma-separated entry is either a bare address (fetches
+    `default_count` messages) or `address:count` (e.g. `foo@bar.com:3`) to
+    override how many of that sender's latest messages to pull — a
+    high-volume mailbox like FT's news alerts wants more than a
+    single-issue-per-day newsletter, without a code change to support it.
+    """
+    senders = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        address, _, count_str = entry.partition(":")
+        count = int(count_str) if count_str else default_count
+        senders.append((address.strip(), count))
+    return senders
+
+
 # ---------------------------------------------------------------------------
 # S3 helpers
 # ---------------------------------------------------------------------------
@@ -89,25 +109,27 @@ def _build_graph(
     openrouter_key: str, tavily_key: str, email_imap_username: str, email_imap_password: str
 ):
     """Build and return the compiled LangGraph graph. Called once per warm start."""
-    from email_adapter.factory import build_mail_provider
+    from email_providers.factory import build_email_provider
     from langchain_openai import ChatOpenAI
     from langgraph.graph import END, StateGraph
     from search_providers.factory import build_web_search_provider
 
-    mail_provider = build_mail_provider(
+    email_provider = build_email_provider(
         os.environ.get("EMAIL_PROVIDER", "imap"),
         host=os.environ.get("EMAIL_IMAP_HOST", "imap.gmail.com"),
         port=int(os.environ.get("EMAIL_IMAP_PORT", "993")),
         username=email_imap_username,
         password=email_imap_password,
     )
-    email_newsletter_senders = [
-        s.strip()
-        for s in os.environ.get("EMAIL_NEWSLETTER_SENDERS", "brewmarkets@morningbrew.com").split(
-            ","
-        )
-        if s.strip()
-    ]
+    email_newsletter_senders = _parse_newsletter_senders(
+        os.environ.get(
+            "EMAIL_NEWSLETTER_SENDERS",
+            "brewmarkets@morningbrew.com,"
+            "FT@news-alerts.ft.com:3,"
+            "noreply@newsletter.thetimes.co.uk:3",
+        ),
+        default_count=int(os.environ.get("EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT", "1")),
+    )
 
     llm = ChatOpenAI(
         model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3.7-flash"),
@@ -166,7 +188,7 @@ def _build_graph(
     graph.add_node(
         "email_newsletter_search",
         build_email_newsletter_search_node(
-            mail_provider, email_newsletter_senders, _s3, INPUT_BUCKET
+            email_provider, email_newsletter_senders, _s3, INPUT_BUCKET
         ),
     )
     graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, INPUT_BUCKET))

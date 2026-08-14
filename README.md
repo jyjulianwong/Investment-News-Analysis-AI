@@ -351,7 +351,7 @@ aws lambda get-function \
 |-------------|-------|
 | Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` |
 | 12:00       | EventBridge triggers the Lambda |
-| 12:00–12:15 | Lambda fetches the latest newsletter email (IMAP) and writes it to `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` like any other snippet, reads all of that day's snippets back from S3, then runs the rest of the LangGraph pipeline |
+| 12:00–12:15 | Lambda fetches each configured newsletter sender's latest message(s) (IMAP) and writes them to `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` like any other snippet, reads all of that day's snippets back from S3, then runs the rest of the LangGraph pipeline |
 | After 12:15 | User visits the Reports page; today's PDF and Markdown report are available |
 
 ---
