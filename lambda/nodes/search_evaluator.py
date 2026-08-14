@@ -1,17 +1,20 @@
 from urllib.parse import urlparse
 
+from search_providers.base import WebSearchProvider
 from state import AgentState
 
 
 def _domain(url: str) -> str:
-    # Tavily results are always http(s), where netloc is the domain. Sources
-    # like email_newsletter_search's `mailto:` URLs have no netloc — fall
-    # back to the full URL so they still count as one distinct source
+    # Web search results are usually http(s), where netloc is the domain.
+    # Sources like email_newsletter_search's `mailto:` URLs have no netloc —
+    # fall back to the full URL so they still count as one distinct source
     # instead of raising (a bare `.split("/")[2]` would IndexError on those).
     return urlparse(url).netloc or url
 
 
-def build_search_evaluator_node(min_results: int, min_domains: int):
+def build_search_evaluator_node(
+    min_results: int, min_domains: int, providers: list[WebSearchProvider]
+):
     def search_evaluator_node(state: AgentState) -> AgentState:
         results = state["search_results"]
         unique_domains = {_domain(r["url"]) for r in results if r.get("url")}
@@ -21,7 +24,28 @@ def build_search_evaluator_node(min_results: int, min_domains: int):
         )
         for d in sorted(unique_domains):
             print(f"[agent]   {d}")
-        return {**state, "search_sufficient": sufficient}
+
+        provider_index = state["search_provider_index"]
+        attempt = state["search_attempt"]
+        # Each provider gets its own narrow/wide (day/week) retry pair
+        # (see nodes/web_search.py). Once both attempts are exhausted and
+        # the result is still insufficient, fall through to the next
+        # provider in priority order, resetting attempts for it.
+        provider_exhausted = attempt >= 2
+        if not sufficient and provider_exhausted and provider_index + 1 < len(providers):
+            print(
+                f"[agent] Search evaluator: {providers[provider_index].name} exhausted — "
+                f"falling through to {providers[provider_index + 1].name}"
+            )
+            provider_index += 1
+            attempt = 0
+
+        return {
+            **state,
+            "search_sufficient": sufficient,
+            "search_provider_index": provider_index,
+            "search_attempt": attempt,
+        }
 
     return search_evaluator_node
 

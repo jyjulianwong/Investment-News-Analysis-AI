@@ -19,8 +19,8 @@ GitHub Pages Client
                                 ├─ Email Newsletter Search (IMAP) ──────────────────┘
                                 ├─ News Snippet Getter (reads all of input/YYYY-MM-DD/ back)
                                 ├─ Query Generation    (OpenRouter)
-                                ├─ Web Search          (Tavily, preferred domains first)
-                                ├─ Search Evaluator    (fallback to open search if needed)
+                                ├─ Web Search          (Tavily first, DDGS fallback — priority list)
+                                ├─ Search Evaluator    (retries wider, then falls through providers)
                                 └─ Market Analyst      (OpenRouter)
                                         │
                                 S3 output bucket  (output/YYYY-MM-DD/report.{pdf,md})
@@ -117,6 +117,8 @@ terraform apply \
   -var="aws_account_id=$ACCOUNT_ID" \
   -var="openrouter_api_key=YOUR_KEY" \
   -var="tavily_api_key=YOUR_KEY" \
+  -var="email_imap_username=YOUR_GMAIL_ADDRESS" \
+  -var="email_imap_app_password=YOUR_GMAIL_APP_PASSWORD" \
   -var="client_github_pages_origin=https://YOUR_USERNAME.github.io"
 ```
 
@@ -143,6 +145,8 @@ terraform apply \
   -var="aws_account_id=$ACCOUNT_ID" \
   -var="openrouter_api_key=YOUR_KEY" \
   -var="tavily_api_key=YOUR_KEY" \
+  -var="email_imap_username=YOUR_GMAIL_ADDRESS" \
+  -var="email_imap_app_password=YOUR_GMAIL_APP_PASSWORD" \
   -var="client_github_pages_origin=https://YOUR_USERNAME.github.io"
 ```
 
@@ -392,6 +396,8 @@ docker run -p 9000:8080 \
   -e "AWS_S3_OUTPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
   -e "SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key" \
   -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
+  -e "SSM_EMAIL_IMAP_USERNAME_PARAM=/jyjulianwong-ina/email_imap_username" \
+  -e "SSM_EMAIL_IMAP_PASSWORD_PARAM=/jyjulianwong-ina/email_imap_app_password" \
   -e AWS_ACCESS_KEY_ID=... \
   -e AWS_SECRET_ACCESS_KEY=... \
   ina-lambda-agent-test

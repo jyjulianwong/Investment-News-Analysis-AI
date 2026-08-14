@@ -6,5 +6,6 @@ class AgentState(TypedDict):
     queries: list[str]
     search_results: list[dict]
     search_attempt: int
+    search_provider_index: int
     search_sufficient: bool
     report: str

@@ -19,9 +19,9 @@ def _age_label(published_date: str, today: str) -> str:
     published = parse_source_date(published_date)
     if published is None:
         return (
-            "unknown — Tavily did not return a verifiable publish date for "
-            "this source; do not attribute a specific date to it, and do "
-            "not treat it as confirmed-current evidence"
+            "unknown — the search provider did not return a verifiable "
+            "publish date for this source; do not attribute a specific "
+            "date to it, and do not treat it as confirmed-current evidence"
         )
     age_days = (date.fromisoformat(today) - published).days
     formatted = published.strftime("%b %-d, %Y")

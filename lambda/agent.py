@@ -91,8 +91,8 @@ def _build_graph(
     """Build and return the compiled LangGraph graph. Called once per warm start."""
     from email_adapter.factory import build_mail_provider
     from langchain_openai import ChatOpenAI
-    from langchain_tavily import TavilySearch
     from langgraph.graph import END, StateGraph
+    from search_providers.factory import build_web_search_provider
 
     mail_provider = build_mail_provider(
         os.environ.get("EMAIL_PROVIDER", "imap"),
@@ -118,19 +118,6 @@ def _build_graph(
 
     system_prompt = PROMPTS_ENV.get_template("system.j2").render()
 
-    # time_range is deliberately NOT baked into these kwargs: it varies by
-    # search attempt (see nodes/web_search.py), so it's passed per-call instead.
-    tavily_kwargs = {
-        "tavily_api_key": tavily_key,
-        "max_results": int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
-        "search_depth": os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
-        # "news" is the only Tavily topic that reliably attaches
-        # published_date metadata to results — "finance" and "general" omit
-        # it on most results, which is why staleness/date checks need it.
-        # The curated include_domains list below already does the work of
-        # keeping results finance-relevant, so this doesn't sacrifice much.
-        "topic": os.environ.get("TAVILY_TOPIC", "news"),
-    }
     include_domains_raw = os.environ.get(
         "TAVILY_INCLUDE_DOMAINS",
         "reuters.com,apnews.com,cnbc.com,marketwatch.com,investing.com,"
@@ -138,10 +125,39 @@ def _build_graph(
         "finance.yahoo.com,theguardian.com",
     )
     include_domains = [d.strip() for d in include_domains_raw.split(",") if d.strip()]
-    search_tool_filtered = (
-        TavilySearch(**tavily_kwargs, include_domains=include_domains) if include_domains else None
-    )
-    search_tool_open = TavilySearch(**tavily_kwargs)
+
+    # Construction kwargs per search provider. Each provider needs different
+    # inputs (Tavily needs the SSM-fetched key + a curated domain list, DDGS
+    # needs neither) — keyed by the same name used in WEB_SEARCH_PROVIDERS
+    # and search_providers.factory._PROVIDERS. Adding a new provider means
+    # adding one entry here plus one entry in that registry — no other code
+    # changes.
+    provider_kwargs = {
+        "tavily": {
+            "api_key": tavily_key,
+            "max_results": int(os.environ.get("TAVILY_MAX_RESULTS", "10")),
+            "search_depth": os.environ.get("TAVILY_SEARCH_DEPTH", "advanced"),
+            # "news" is the only Tavily topic that reliably attaches
+            # published_date metadata to results — "finance" and "general"
+            # omit it on most results, which is why staleness/date checks
+            # need it. The curated include_domains list already does the
+            # work of keeping results finance-relevant, so this doesn't
+            # sacrifice much.
+            "topic": os.environ.get("TAVILY_TOPIC", "news"),
+            "include_domains": include_domains,
+        },
+        "ddgs": {
+            "max_results": int(os.environ.get("DDGS_MAX_RESULTS", "10")),
+        },
+    }
+    provider_priority = [
+        p.strip()
+        for p in os.environ.get("WEB_SEARCH_PROVIDERS", "tavily,ddgs").split(",")
+        if p.strip()
+    ]
+    search_providers = [
+        build_web_search_provider(name, **provider_kwargs[name]) for name in provider_priority
+    ]
     search_workers = int(os.environ.get("TAVILY_SEARCH_WORKERS", "5"))
     min_results = int(os.environ.get("EVALUATOR_MIN_RESULTS", "5"))
     min_domains = int(os.environ.get("EVALUATOR_MIN_DOMAINS", "3"))
@@ -155,10 +171,11 @@ def _build_graph(
     )
     graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, INPUT_BUCKET))
     graph.add_node("query_generation", build_query_generation_node(llm, system_prompt))
+    graph.add_node("web_search", build_web_search_node(search_providers, search_workers))
     graph.add_node(
-        "web_search", build_web_search_node(search_tool_filtered, search_tool_open, search_workers)
+        "search_evaluator",
+        build_search_evaluator_node(min_results, min_domains, search_providers),
     )
-    graph.add_node("search_evaluator", build_search_evaluator_node(min_results, min_domains))
     graph.add_node("market_analyst", build_market_analyst_node(llm, system_prompt))
     graph.add_node("market_data_search", build_market_data_search_node(llm, system_prompt))
     graph.add_node("report_verifier", report_verifier_node)
@@ -210,6 +227,7 @@ def handler(event, context):
         "queries": [],
         "search_results": [],
         "search_attempt": 0,
+        "search_provider_index": 0,
         "search_sufficient": False,
         "report": "",
     }
