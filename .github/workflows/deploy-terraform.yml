@@ -60,6 +60,8 @@ jobs:
             -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
             -var="openrouter_api_key=${{ secrets.OPENROUTER_API_KEY }}" \
             -var="tavily_api_key=${{ secrets.TAVILY_API_KEY }}" \
+            -var="email_imap_username=${{ secrets.EMAIL_IMAP_USERNAME }}" \
+            -var="email_imap_app_password=${{ secrets.EMAIL_IMAP_APP_PASSWORD }}" \
             -var="client_github_pages_origin=${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}" \
             -no-color \
             -out=tfplan
@@ -151,6 +153,8 @@ jobs:
             -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
             -var="openrouter_api_key=${{ secrets.OPENROUTER_API_KEY }}" \
             -var="tavily_api_key=${{ secrets.TAVILY_API_KEY }}" \
+            -var="email_imap_username=${{ secrets.EMAIL_IMAP_USERNAME }}" \
+            -var="email_imap_app_password=${{ secrets.EMAIL_IMAP_APP_PASSWORD }}" \
             -var="client_github_pages_origin=${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}" \
             -auto-approve \
             -no-color

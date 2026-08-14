@@ -9,13 +9,13 @@ terraform {
 }
 
 provider "aws" {
-  region             = var.aws_region
+  region              = var.aws_region
   allowed_account_ids = [var.aws_account_id]
 }
 
 locals {
   global_prefix = "${var.aws_account_id}-${var.project}" # S3 buckets (globally scoped)
-  scoped_prefix = var.project                             # all other resources (account-scoped)
+  scoped_prefix = var.project                            # all other resources (account-scoped)
 }
 
 # ---------------------------------------------------------------------------
@@ -116,6 +116,20 @@ resource "aws_ssm_parameter" "tavily_api_key" {
   description = "Tavily Search API key for the Lambda web search step"
 }
 
+resource "aws_ssm_parameter" "email_imap_username" {
+  name        = "/${local.scoped_prefix}/email_imap_username"
+  type        = "SecureString"
+  value       = var.email_imap_username
+  description = "Gmail address for the Lambda email newsletter search step"
+}
+
+resource "aws_ssm_parameter" "email_imap_app_password" {
+  name        = "/${local.scoped_prefix}/email_imap_app_password"
+  type        = "SecureString"
+  value       = var.email_imap_app_password
+  description = "Gmail App Password for the Lambda email newsletter search step"
+}
+
 # ---------------------------------------------------------------------------
 # ECR — Lambda container image repository
 # ---------------------------------------------------------------------------
@@ -173,10 +187,11 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 
 data "aws_iam_policy_document" "lambda_permissions" {
   statement {
-    sid    = "ReadInputBucket"
+    sid    = "ReadWriteInputBucket"
     effect = "Allow"
     actions = [
       "s3:GetObject",
+      "s3:PutObject",
       "s3:ListBucket",
     ]
     resources = [
@@ -203,6 +218,8 @@ data "aws_iam_policy_document" "lambda_permissions" {
     resources = [
       aws_ssm_parameter.openrouter_api_key.arn,
       aws_ssm_parameter.tavily_api_key.arn,
+      aws_ssm_parameter.email_imap_username.arn,
+      aws_ssm_parameter.email_imap_app_password.arn,
     ]
   }
 
@@ -242,11 +259,13 @@ resource "aws_lambda_function" "agent" {
 
   environment {
     variables = {
-      AWS_S3_INPUT_BUCKET_NAME  = aws_s3_bucket.input.bucket
-      AWS_S3_OUTPUT_BUCKET_NAME = aws_s3_bucket.output.bucket
-      SSM_OPENROUTER_PARAM      = aws_ssm_parameter.openrouter_api_key.name
-      SSM_TAVILY_PARAM          = aws_ssm_parameter.tavily_api_key.name
-      AWS_REGION_NAME           = var.aws_region
+      AWS_S3_INPUT_BUCKET_NAME      = aws_s3_bucket.input.bucket
+      AWS_S3_OUTPUT_BUCKET_NAME     = aws_s3_bucket.output.bucket
+      SSM_OPENROUTER_PARAM          = aws_ssm_parameter.openrouter_api_key.name
+      SSM_TAVILY_PARAM              = aws_ssm_parameter.tavily_api_key.name
+      SSM_EMAIL_IMAP_USERNAME_PARAM = aws_ssm_parameter.email_imap_username.name
+      SSM_EMAIL_IMAP_PASSWORD_PARAM = aws_ssm_parameter.email_imap_app_password.name
+      AWS_REGION_NAME               = var.aws_region
     }
   }
 

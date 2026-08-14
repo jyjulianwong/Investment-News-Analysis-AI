@@ -27,6 +27,18 @@ variable "tavily_api_key" {
   sensitive   = true
 }
 
+variable "email_imap_username" {
+  description = "Gmail address the Lambda logs into via IMAP to fetch newsletter snippets — injected via GitHub Actions secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "email_imap_app_password" {
+  description = "Gmail App Password for email_imap_username — injected via GitHub Actions secret"
+  type        = string
+  sensitive   = true
+}
+
 variable "client_github_pages_origin" {
   description = "The GitHub Pages origin allowed for CORS on the Render API, e.g. https://jyjulianwong.github.io"
   type        = string

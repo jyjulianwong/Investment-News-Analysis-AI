@@ -20,6 +20,7 @@ RUN uv pip install --system --no-cache -r pyproject.toml
 
 COPY agent.py helpers.py state.py ${LAMBDA_TASK_ROOT}/
 COPY nodes/ ${LAMBDA_TASK_ROOT}/nodes/
+COPY email_adapter/ ${LAMBDA_TASK_ROOT}/email_adapter/
 COPY prompts/ ${LAMBDA_TASK_ROOT}/prompts/
 
 CMD ["agent.handler"]

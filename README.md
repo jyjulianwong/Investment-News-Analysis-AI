@@ -11,11 +11,13 @@ I make a habit of reading the news on my way to work every morning... but I know
 ```
 GitHub Pages Client
   └─ POST /snippets ──► Render Server (FastAPI)
-                              └─► S3 input bucket  (input/YYYY-MM-DD/<uuid>.txt)
-                                        │
-                              EventBridge (12:00 UTC daily)
-                                        │
-                              Lambda container (LangGraph)
+                              └─► S3 input bucket  (input/YYYY-MM-DD/<content-hash>.txt)  ◄──┐
+                                        │                                           │ writes newsletter
+                              EventBridge (12:00 UTC daily)                         │ snippet, same format
+                                        │                                           │
+                              Lambda container (LangGraph)                          │
+                                ├─ Email Newsletter Search (IMAP) ──────────────────┘
+                                ├─ News Snippet Getter (reads all of input/YYYY-MM-DD/ back)
                                 ├─ Query Generation    (OpenRouter)
                                 ├─ Web Search          (Tavily, preferred domains first)
                                 ├─ Search Evaluator    (fallback to open search if needed)
@@ -174,6 +176,8 @@ In your GitHub repository → **Settings → Secrets and variables → Actions**
 | `AWS_SECRET_ACCESS_KEY`        | GitHub Actions IAM user secret access key     |
 | `OPENROUTER_API_KEY`           | Your OpenRouter API key                       |
 | `TAVILY_API_KEY`               | Your Tavily API key (free tier at tavily.com) |
+| `EMAIL_IMAP_USERNAME`          | Gmail address the Lambda logs into via IMAP   |
+| `EMAIL_IMAP_APP_PASSWORD`      | [Gmail App Password](https://myaccount.google.com/apppasswords) for that address |
 | `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`         |
 
 ### 5a. Create and deploy the Render service
@@ -282,6 +286,20 @@ aws ssm put-parameter \
   --type SecureString \
   --overwrite \
   --region eu-west-2
+
+aws ssm put-parameter \
+  --name "/jyjulianwong-ina/email_imap_username" \
+  --value "you@gmail.com" \
+  --type SecureString \
+  --overwrite \
+  --region eu-west-2
+
+aws ssm put-parameter \
+  --name "/jyjulianwong-ina/email_imap_app_password" \
+  --value "your Gmail App Password" \
+  --type SecureString \
+  --overwrite \
+  --region eu-west-2
 ```
 
 ### Verify SSM parameters exist
@@ -327,9 +345,9 @@ aws lambda get-function \
 
 | Time (UTC)  | Event |
 |-------------|-------|
-| Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://<input-bucket>/input/YYYY-MM-DD/<uuid>.txt` |
+| Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` |
 | 12:00       | EventBridge triggers the Lambda |
-| 12:00–12:15 | Lambda runs the LangGraph pipeline (or generates a no-snippets report if none were submitted) |
+| 12:00–12:15 | Lambda fetches the latest newsletter email (IMAP) and writes it to `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` like any other snippet, reads all of that day's snippets back from S3, then runs the rest of the LangGraph pipeline |
 | After 12:15 | User visits the Reports page; today's PDF and Markdown report are available |
 
 ---

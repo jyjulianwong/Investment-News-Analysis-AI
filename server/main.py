@@ -1,5 +1,5 @@
+import hashlib
 import os
-import uuid
 from datetime import datetime, timezone
 
 import boto3
@@ -34,6 +34,7 @@ def _today_utc() -> str:
         return override[:10]
     return datetime.now(tz=timezone.utc).date().isoformat()
 
+
 _MAX_SNIPPET_CHARS = 10_000
 
 
@@ -54,12 +55,17 @@ class SnippetRequest(BaseModel):
 @app.post("/snippets", status_code=200)
 def submit_snippet(body: SnippetRequest):
     today = _today_utc()
-    key = f"input/{today}/{uuid.uuid4()}.txt"
+    # Keyed by a content hash rather than a random uuid, so a duplicate
+    # submission (e.g. a retried request) overwrites the same object instead
+    # of accumulating a second copy of the same snippet.
+    snippet_bytes = body.text.encode("utf-8")
+    content_hash = hashlib.sha256(snippet_bytes).hexdigest()
+    key = f"input/{today}/{content_hash}.txt"
     try:
         _s3.put_object(
             Bucket=_INPUT_BUCKET,
             Key=key,
-            Body=body.text.encode("utf-8"),
+            Body=snippet_bytes,
             ContentType="text/plain",
         )
     except Exception as exc:

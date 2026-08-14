@@ -29,6 +29,8 @@ docker run --rm \
     -e AWS_S3_OUTPUT_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-output" \
     -e SSM_OPENROUTER_PARAM="/jyjulianwong-ina/openrouter_api_key" \
     -e SSM_TAVILY_PARAM="/jyjulianwong-ina/tavily_api_key" \
+    -e SSM_EMAIL_IMAP_USERNAME_PARAM="/jyjulianwong-ina/email_imap_username" \
+    -e SSM_EMAIL_IMAP_PASSWORD_PARAM="/jyjulianwong-ina/email_imap_app_password" \
     -e PYTHONUNBUFFERED=1 \
     --entrypoint python \
     jyjulianwong-ina-lambda-agent-local \

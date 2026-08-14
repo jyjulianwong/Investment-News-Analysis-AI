@@ -4,8 +4,10 @@ import warnings
 import boto3
 import markdown
 from helpers import PROMPTS_ENV, today_utc
+from nodes.email_newsletter_search import build_email_newsletter_search_node
 from nodes.market_analyst import build_market_analyst_node
 from nodes.market_data_search import build_market_data_search_node
+from nodes.news_snippet_getter import build_news_snippet_getter_node
 from nodes.query_generation import build_query_generation_node
 from nodes.report_verifier import report_verifier_node
 from nodes.search_evaluator import build_search_evaluator_node, route_after_evaluation
@@ -28,6 +30,8 @@ INPUT_BUCKET = os.environ["AWS_S3_INPUT_BUCKET_NAME"]
 OUTPUT_BUCKET = os.environ["AWS_S3_OUTPUT_BUCKET_NAME"]
 SSM_OPENROUTER_PARAM = os.environ["SSM_OPENROUTER_PARAM"]
 SSM_TAVILY_PARAM = os.environ["SSM_TAVILY_PARAM"]
+SSM_EMAIL_IMAP_USERNAME_PARAM = os.environ["SSM_EMAIL_IMAP_USERNAME_PARAM"]
+SSM_EMAIL_IMAP_PASSWORD_PARAM = os.environ["SSM_EMAIL_IMAP_PASSWORD_PARAM"]
 
 
 def _get_secret(param_name: str) -> str:
@@ -38,22 +42,6 @@ def _get_secret(param_name: str) -> str:
 # ---------------------------------------------------------------------------
 # S3 helpers
 # ---------------------------------------------------------------------------
-
-
-def _list_snippets(day: str) -> list[str]:
-    """Return the text content of every snippet file for the given day (YYYY-MM-DD)."""
-    prefix = f"input/{day}/"
-    paginator = _s3.get_paginator("list_objects_v2")
-    keys = [
-        obj["Key"]
-        for page in paginator.paginate(Bucket=INPUT_BUCKET, Prefix=prefix)
-        for obj in page.get("Contents", [])
-    ]
-    texts = []
-    for key in keys:
-        body = _s3.get_object(Bucket=INPUT_BUCKET, Key=key)["Body"].read().decode("utf-8")
-        texts.append(body.strip())
-    return texts
 
 
 def _upload_report(day: str, md_text: str, pdf_bytes: bytes) -> None:
@@ -97,11 +85,29 @@ def _md_to_pdf(md_text: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def _build_graph(openrouter_key: str, tavily_key: str):
+def _build_graph(
+    openrouter_key: str, tavily_key: str, email_imap_username: str, email_imap_password: str
+):
     """Build and return the compiled LangGraph graph. Called once per warm start."""
+    from email_adapter.factory import build_mail_provider
     from langchain_openai import ChatOpenAI
     from langchain_tavily import TavilySearch
     from langgraph.graph import END, StateGraph
+
+    mail_provider = build_mail_provider(
+        os.environ.get("EMAIL_PROVIDER", "imap"),
+        host=os.environ.get("EMAIL_IMAP_HOST", "imap.gmail.com"),
+        port=int(os.environ.get("EMAIL_IMAP_PORT", "993")),
+        username=email_imap_username,
+        password=email_imap_password,
+    )
+    email_newsletter_senders = [
+        s.strip()
+        for s in os.environ.get("EMAIL_NEWSLETTER_SENDERS", "brewmarkets@morningbrew.com").split(
+            ","
+        )
+        if s.strip()
+    ]
 
     llm = ChatOpenAI(
         model=os.environ.get("OPENROUTER_MODEL", "openai/gpt-5.4-nano"),
@@ -141,6 +147,13 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     min_domains = int(os.environ.get("EVALUATOR_MIN_DOMAINS", "3"))
 
     graph = StateGraph(AgentState)
+    graph.add_node(
+        "email_newsletter_search",
+        build_email_newsletter_search_node(
+            mail_provider, email_newsletter_senders, _s3, INPUT_BUCKET
+        ),
+    )
+    graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, INPUT_BUCKET))
     graph.add_node("query_generation", build_query_generation_node(llm, system_prompt))
     graph.add_node(
         "web_search", build_web_search_node(search_tool_filtered, search_tool_open, search_workers)
@@ -150,7 +163,9 @@ def _build_graph(openrouter_key: str, tavily_key: str):
     graph.add_node("market_data_search", build_market_data_search_node(llm, system_prompt))
     graph.add_node("report_verifier", report_verifier_node)
 
-    graph.set_entry_point("query_generation")
+    graph.set_entry_point("email_newsletter_search")
+    graph.add_edge("email_newsletter_search", "news_snippet_getter")
+    graph.add_edge("news_snippet_getter", "query_generation")
     graph.add_edge("query_generation", "web_search")
     graph.add_edge("web_search", "search_evaluator")
     graph.add_conditional_edges(
@@ -178,18 +193,20 @@ def handler(event, context):
     today = today_utc()
     print(f"[agent] Starting run for {today}")
 
-    snippets = _list_snippets(today)
-    print(f"[agent] Found {len(snippets)} snippet(s) — running LangGraph pipeline")
-
     openrouter_key = _get_secret(SSM_OPENROUTER_PARAM)
     tavily_key = _get_secret(SSM_TAVILY_PARAM)
+    email_imap_username = _get_secret(SSM_EMAIL_IMAP_USERNAME_PARAM)
+    email_imap_password = _get_secret(SSM_EMAIL_IMAP_PASSWORD_PARAM)
 
     global _graph
     if _graph is None:
-        _graph = _build_graph(openrouter_key, tavily_key)
+        _graph = _build_graph(openrouter_key, tavily_key, email_imap_username, email_imap_password)
 
+    # snippets starts empty — email_newsletter_search and news_snippet_getter
+    # populate it from S3 as the first two graph nodes (see _build_graph),
+    # rather than this being a pre-processing step outside the graph.
     initial_state = {
-        "snippets": snippets,
+        "snippets": [],
         "queries": [],
         "search_results": [],
         "search_attempt": 0,
