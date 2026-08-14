@@ -15,6 +15,11 @@ def build_query_generation_node(llm, system_prompt: str):
             for line in response.content.strip().splitlines()
             if line.strip()
         ]
+        print(
+            f"[agent] Query generation: {len(lines)} quer{'y' if len(lines) == 1 else 'ies'} generated"
+        )
+        for q in lines:
+            print(f"[agent]   {q}")
         return {**state, "queries": lines}
 
     return query_generation_node

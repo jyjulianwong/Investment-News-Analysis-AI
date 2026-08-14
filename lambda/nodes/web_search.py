@@ -54,6 +54,16 @@ def build_web_search_node(search_tool_filtered, search_tool_open, search_workers
                 query = futures[future]
                 try:
                     result = future.result()
+                    if "error" in result:
+                        # TavilySearch.invoke() returns {"error": ValueError(...)}
+                        # instead of raising on API-side failures (quota limits,
+                        # auth, outages) — treat that the same as an exception so
+                        # it's visible, rather than silently reading as "0
+                        # results found" (indistinguishable from a quiet news
+                        # day) via the `.get("results", [])` fallback below.
+                        error_count += 1
+                        print(f"[agent] Web search: query {query!r} failed — {result['error']!r}")
+                        continue
                     for r in result.get("results", []):
                         published_date = r.get("published_date", "")
                         parsed = parse_source_date(published_date)
