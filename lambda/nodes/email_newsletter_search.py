@@ -2,7 +2,7 @@ import hashlib
 from datetime import date
 
 from email_providers.base import EmailMessage, EmailProvider
-from helpers import today_utc
+from helpers import STALE_AGE_DAYS, today_utc
 from state import AgentState
 
 
@@ -30,9 +30,10 @@ def _as_search_result(message: EmailMessage) -> dict:
     agent.py) would otherwise produce several search results sharing one
     identical `mailto:` URL, which breaks report_verifier.py's
     `published_by_url` lookup — it's keyed by URL, so distinct messages need
-    distinct URLs to each get their own correct citation date. The fragment
-    is ignored by `_domain` in nodes/search_evaluator.py, so these still
-    count as a single source for diversity purposes.
+    distinct URLs to each get their own correct citation date. `mailto:`
+    results are excluded from search_evaluator.py's sufficiency/diversity
+    check entirely (identified by URL scheme), so the fragment only matters
+    for citation dating, not for source-diversity counting.
     """
     return {
         "query": f"Email newsletter: {message.subject}",
@@ -72,6 +73,16 @@ def build_email_newsletter_search_node(
                 print(f"[agent] Email newsletter search: no message found from {sender!r}")
                 continue
             for message in messages:
+                age_days = (cutoff - message.received_at.date()).days
+                if age_days > STALE_AGE_DAYS:
+                    print(
+                        f"[agent] Email newsletter search: skipping stale message from {sender!r} — "
+                        f"received={message.received_at.isoformat()} ({age_days}d ago, older than "
+                        f"{STALE_AGE_DAYS}d) — a sender misconfiguration or lapsed subscription "
+                        f"likely means there's no recent message to fetch"
+                    )
+                    continue
+
                 body_preview = " ".join(message.body.split())[:200]
                 print(
                     f"[agent] Email newsletter search: fetched {sender!r} — "

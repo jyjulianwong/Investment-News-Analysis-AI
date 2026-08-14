@@ -4,26 +4,30 @@ from search_providers.base import WebSearchProvider
 from state import AgentState
 
 
+def _is_newsletter_result(result: dict) -> bool:
+    # email_newsletter_search.py's `_as_search_result` stands in a `mailto:`
+    # URI for a URL. Newsletter results are excluded from this node's
+    # sufficiency/diversity check (see search_evaluator_node) — they're
+    # fetched unconditionally from a fixed, small sender list rather than
+    # queried for, so counting them here would let a healthy-looking mailbox
+    # mask a web search provider that returned nothing (e.g. an exhausted
+    # API quota never falling through to the next provider). They still
+    # reach the analyst as WEB CONTEXT via state["search_results"] — only
+    # this evaluation is scoped to actual web search results.
+    return result.get("url", "").startswith("mailto:")
+
+
 def _domain(url: str) -> str:
-    # Web search results are usually http(s), where netloc is the domain.
-    # Sources like email_newsletter_search's `mailto:` URLs have no netloc —
-    # fall back to path (a bare `.split("/")[2]` would IndexError on those).
-    # Using `.path` rather than the full url matters now that a single
-    # newsletter sender can contribute several messages (up to its
-    # configured count — see EMAIL_NEWSLETTER_SENDERS in agent.py), each
-    # with a distinct fragment identifying that message (see
-    # `_as_search_result` in nodes/email_newsletter_search.py): `.path` is
-    # just the mailbox address, shared across those messages, so they still
-    # count as one source for diversity purposes rather than one per email.
-    parsed = urlparse(url)
-    return parsed.netloc or parsed.path or url
+    # Only ever called on the web-search-only subset of results, so
+    # http(s) netloc extraction is all that's needed here.
+    return urlparse(url).netloc or url
 
 
 def build_search_evaluator_node(
     min_results: int, min_domains: int, providers: list[WebSearchProvider]
 ):
     def search_evaluator_node(state: AgentState) -> AgentState:
-        results = state["search_results"]
+        results = [r for r in state["search_results"] if not _is_newsletter_result(r)]
         unique_domains = {_domain(r["url"]) for r in results if r.get("url")}
         sufficient = len(results) >= min_results and len(unique_domains) >= min_domains
         print(
