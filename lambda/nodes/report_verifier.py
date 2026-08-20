@@ -10,6 +10,15 @@ from state import AgentState
 _MALFORMED_LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\]]+)\]")
 _LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\s]+)\)")
 
+# A citation link wrapped in a Markdown code span, e.g. `` `[CNBC, Aug
+# 2](url)` `` — the model sometimes copies the backtick-quoting used to
+# illustrate the citation format in the prompt into its actual citations.
+# Markdown never parses inside a code span, so a backtick-wrapped citation
+# renders as literal, unclickable text (brackets, parens, and all) instead
+# of a hyperlink — the exact "hyperlinks not rendering" failure this guards
+# against.
+_BACKTICKED_LINK_RE = re.compile(r"`+(\[[^\[\]]+\]\([^()\s]+\))`+")
+
 # A month name (optionally trailing "?", the model's own uncertainty marker,
 # e.g. "Jun? 2026") followed by an optional day and a 4-digit year, e.g.
 # "June 19, 2023", "Feb 21, 2025", "Jan 2026".
@@ -39,6 +48,17 @@ def _parse_label_date(text: str) -> date | None:
         except ValueError:
             continue
     return None
+
+
+def _unwrap_backticked_links(report_md: str) -> str:
+    """Strip backticks that wrap a citation link so it renders as a real
+    hyperlink instead of literal code text — see `_BACKTICKED_LINK_RE`."""
+
+    def _unwrap(match: re.Match) -> str:
+        print(f"[agent] Citation verifier: unwrapped backtick-quoted link -> {match.group(1)}")
+        return match.group(1)
+
+    return _BACKTICKED_LINK_RE.sub(_unwrap, report_md)
 
 
 def _verify_citations(report_md: str, valid_urls: set[str]) -> str:
@@ -189,7 +209,8 @@ def report_verifier_node(state: AgentState) -> AgentState:
     published_by_url = {
         r["url"]: r.get("published_date", "") for r in state["search_results"] if r.get("url")
     }
-    report_md = _verify_citations(state["report"], valid_urls)
+    report_md = _unwrap_backticked_links(state["report"])
+    report_md = _verify_citations(report_md, valid_urls)
     report_md = _repair_citation_dates(report_md, published_by_url, today_utc())
     report_md = _flag_unquantified_priced_in_checks(report_md)
     return {**state, "report": report_md}
