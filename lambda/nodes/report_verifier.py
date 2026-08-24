@@ -175,7 +175,10 @@ def _flag_unquantified_priced_in_checks(report_md: str) -> str:
     """
     spans = [
         s
-        for s in (_find_section(report_md, p) for p in ("Opportunities", "If I had 6 months.*"))
+        for s in (
+            _find_section(report_md, p)
+            for p in ("Opportunities", "If I had 6 months, I would long.*", "If I had 6 months, I would short.*")
+        )
         if s
     ]
     if not spans:
