@@ -168,39 +168,28 @@
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
     }
-    .pagination button:hover:not(:disabled):not(.active) { background: #e8f0f8; }
-    .pagination button.active {
-      background: #1a3a5c;
-      color: #fff;
-      border-color: #1a3a5c;
-      cursor: default;
-    }
+    .pagination button:hover:not(:disabled) { background: #e8f0f8; }
     .pagination button:disabled {
       color: #bbb;
       cursor: not-allowed;
-    }
-    .pagination .ellipsis {
-      padding: 0 4px;
-      color: #888;
-      font-size: 0.85rem;
     }
     .pagination-jump {
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-left: 8px;
+      margin: 0 4px;
       font-size: 0.83rem;
       color: #666;
       white-space: nowrap;
     }
-    .pagination-jump input {
-      width: 52px;
+    .pagination-jump select {
       padding: 4px 6px;
       border: 1px solid #dde3ea;
       border-radius: 4px;
       font-size: 0.83rem;
-      text-align: center;
       font-family: inherit;
+      color: #222;
+      background: #fff;
     }
   </style>
 </head>
@@ -313,28 +302,6 @@
     renderPagination(totalPages);
   }
 
-  function getPageNumbers(current, total) {
-    const delta = 1;
-    const pages = [];
-    for (let i = 1; i <= total; i++) {
-      if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
-        pages.push(i);
-      }
-    }
-
-    const withDots = [];
-    let last;
-    pages.forEach(i => {
-      if (last !== undefined) {
-        if (i - last === 2) withDots.push(last + 1);
-        else if (i - last > 2) withDots.push("…");
-      }
-      withDots.push(i);
-      last = i;
-    });
-    return withDots;
-  }
-
   function renderPagination(totalPages) {
     if (totalPages <= 1) {
       paginationEl.style.display = "none";
@@ -345,28 +312,25 @@
     const atFirst = currentPage === 1;
     const atLast  = currentPage === totalPages;
 
+    let options = "";
+    for (let p = 1; p <= totalPages; p++) {
+      options += `<option value="${p}" ${p === currentPage ? "selected" : ""}>${p}</option>`;
+    }
+
     let html = "";
     html += `<button type="button" data-page="1" ${atFirst ? "disabled" : ""} aria-label="First page">&laquo;</button>`;
     html += `<button type="button" data-page="${currentPage - 1}" ${atFirst ? "disabled" : ""} aria-label="Previous page">&lsaquo;</button>`;
 
-    getPageNumbers(currentPage, totalPages).forEach(p => {
-      if (p === "…") {
-        html += `<span class="ellipsis">…</span>`;
-      } else {
-        html += `<button type="button" data-page="${p}" class="${p === currentPage ? "active" : ""}" ${p === currentPage ? 'aria-current="page"' : ""}>${p}</button>`;
-      }
-    });
-
-    html += `<button type="button" data-page="${currentPage + 1}" ${atLast ? "disabled" : ""} aria-label="Next page">&rsaquo;</button>`;
-    html += `<button type="button" data-page="${totalPages}" ${atLast ? "disabled" : ""} aria-label="Last page">&raquo;</button>`;
-
     html += `
       <span class="pagination-jump">
-        <label for="jump-input">Go to</label>
-        <input type="number" id="jump-input" min="1" max="${totalPages}" value="${currentPage}" aria-label="Go to page">
+        <label for="jump-select">Go to</label>
+        <select id="jump-select" aria-label="Go to page">${options}</select>
         of ${totalPages}
       </span>
     `;
+
+    html += `<button type="button" data-page="${currentPage + 1}" ${atLast ? "disabled" : ""} aria-label="Next page">&rsaquo;</button>`;
+    html += `<button type="button" data-page="${totalPages}" ${atLast ? "disabled" : ""} aria-label="Last page">&raquo;</button>`;
 
     paginationEl.style.display = "";
     paginationEl.innerHTML = html;
@@ -375,15 +339,9 @@
       btn.addEventListener("click", () => renderPage(Number(btn.dataset.page)));
     });
 
-    const jumpInput = document.getElementById("jump-input");
-    const jumpToInput = () => {
-      const value = Number(jumpInput.value);
-      if (Number.isInteger(value)) renderPage(value);
-    };
-    jumpInput.addEventListener("keydown", e => {
-      if (e.key === "Enter") jumpToInput();
+    document.getElementById("jump-select").addEventListener("change", e => {
+      renderPage(Number(e.target.value));
     });
-    jumpInput.addEventListener("blur", jumpToInput);
   }
 
   loadReports();
