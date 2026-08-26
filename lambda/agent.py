@@ -132,10 +132,14 @@ def _build_graph(
     )
 
     llm = ChatOpenAI(
-        model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3.7-flash"),
+        model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
         openai_api_key=openrouter_key,
         openai_api_base="https://openrouter.ai/api/v1",
         temperature=0.4,
+        default_headers={
+            "HTTP-Referer": "https://github.com/jyjulianwong/Investment-News-Analysis-AI",
+            "X-Title": "Investment News Analysis AI",
+        },
     )
 
     system_prompt = PROMPTS_ENV.get_template("system.j2").render()
