@@ -132,7 +132,7 @@ def _build_graph(
     )
 
     llm = ChatOpenAI(
-        model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3.7-flash"),
+        model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
         openai_api_key=openrouter_key,
         openai_api_base="https://openrouter.ai/api/v1",
         temperature=0.4,
