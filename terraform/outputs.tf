@@ -1,16 +1,16 @@
-output "s3_input_bucket_name" {
+output "s3_sources_bucket_name" {
   description = "S3 bucket where the Render server writes daily news snippets"
-  value       = aws_s3_bucket.input.bucket
+  value       = aws_s3_bucket.sources.bucket
 }
 
-output "s3_output_bucket_name" {
+output "s3_reports_bucket_name" {
   description = "Public S3 bucket where Lambda writes daily analysis reports"
-  value       = aws_s3_bucket.output.bucket
+  value       = aws_s3_bucket.reports.bucket
 }
 
-output "s3_output_bucket_url" {
-  description = "Base URL for the public output bucket"
-  value       = "https://${aws_s3_bucket.output.bucket}.s3.${var.aws_region}.amazonaws.com"
+output "s3_reports_bucket_url" {
+  description = "Base URL for the public reports bucket"
+  value       = "https://${aws_s3_bucket.reports.bucket}.s3.${var.aws_region}.amazonaws.com"
 }
 
 output "ecr_repository_url" {

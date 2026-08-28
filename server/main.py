@@ -25,7 +25,7 @@ _s3 = boto3.client(
     aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
 )
-_INPUT_BUCKET = os.environ["AWS_S3_INPUT_BUCKET_NAME"]
+_SOURCES_BUCKET = os.environ["AWS_S3_SOURCES_BUCKET_NAME"]
 
 
 def _today_utc() -> str:
@@ -60,10 +60,10 @@ def submit_snippet(body: SnippetRequest):
     # of accumulating a second copy of the same snippet.
     snippet_bytes = body.text.encode("utf-8")
     content_hash = hashlib.sha256(snippet_bytes).hexdigest()
-    key = f"input/{today}/{content_hash}.txt"
+    key = f"sources/{today}/{content_hash}.txt"
     try:
         _s3.put_object(
-            Bucket=_INPUT_BUCKET,
+            Bucket=_SOURCES_BUCKET,
             Key=key,
             Body=snippet_bytes,
             ContentType="text/plain",

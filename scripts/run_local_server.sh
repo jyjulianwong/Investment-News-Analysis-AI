@@ -16,5 +16,5 @@ cd "$REPO_ROOT/server"
 
 INA_DATETIME_OVERRIDE="2000-01-01" \
 CLIENT_GITHUB_PAGES_ORIGIN="http://localhost:3000" \
-AWS_S3_INPUT_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-input" \
+AWS_S3_SOURCES_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
   uv run uvicorn main:app --reload --port 8000

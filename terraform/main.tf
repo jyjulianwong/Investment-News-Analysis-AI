@@ -19,23 +19,23 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# S3 — Input bucket (private, Render API writes here)
+# S3 — Sources bucket (private, Render API writes here)
 # ---------------------------------------------------------------------------
 
-resource "aws_s3_bucket" "input" {
-  bucket = "${local.global_prefix}-news-input"
+resource "aws_s3_bucket" "sources" {
+  bucket = "${local.global_prefix}-news-sources"
 }
 
-resource "aws_s3_bucket_public_access_block" "input" {
-  bucket                  = aws_s3_bucket.input.id
+resource "aws_s3_bucket_public_access_block" "sources" {
+  bucket                  = aws_s3_bucket.sources.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "input" {
-  bucket = aws_s3_bucket.input.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "sources" {
+  bucket = aws_s3_bucket.sources.id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -44,30 +44,30 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "input" {
 }
 
 # ---------------------------------------------------------------------------
-# S3 — Output bucket (public read, UI lists and links to reports here)
+# S3 — Reports bucket (public read, UI lists and links to reports here)
 # ---------------------------------------------------------------------------
 
-resource "aws_s3_bucket" "output" {
-  bucket = "${local.global_prefix}-news-output"
+resource "aws_s3_bucket" "reports" {
+  bucket = "${local.global_prefix}-news-reports"
 }
 
-resource "aws_s3_bucket_public_access_block" "output" {
-  bucket                  = aws_s3_bucket.output.id
+resource "aws_s3_bucket_public_access_block" "reports" {
+  bucket                  = aws_s3_bucket.reports.id
   block_public_acls       = false
   block_public_policy     = false
   ignore_public_acls      = false
   restrict_public_buckets = false
 }
 
-resource "aws_s3_bucket_ownership_controls" "output" {
-  bucket = aws_s3_bucket.output.id
+resource "aws_s3_bucket_ownership_controls" "reports" {
+  bucket = aws_s3_bucket.reports.id
   rule {
     object_ownership = "BucketOwnerPreferred"
   }
 }
 
-resource "aws_s3_bucket_policy" "output_public_read" {
-  bucket = aws_s3_bucket.output.id
+resource "aws_s3_bucket_policy" "reports_public_read" {
+  bucket = aws_s3_bucket.reports.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -77,18 +77,18 @@ resource "aws_s3_bucket_policy" "output_public_read" {
         Principal = "*"
         Action    = ["s3:GetObject", "s3:ListBucket"]
         Resource = [
-          aws_s3_bucket.output.arn,
-          "${aws_s3_bucket.output.arn}/*"
+          aws_s3_bucket.reports.arn,
+          "${aws_s3_bucket.reports.arn}/*"
         ]
       }
     ]
   })
 
-  depends_on = [aws_s3_bucket_public_access_block.output]
+  depends_on = [aws_s3_bucket_public_access_block.reports]
 }
 
-resource "aws_s3_bucket_cors_configuration" "output" {
-  bucket = aws_s3_bucket.output.id
+resource "aws_s3_bucket_cors_configuration" "reports" {
+  bucket = aws_s3_bucket.reports.id
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "HEAD"]
@@ -187,7 +187,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 
 data "aws_iam_policy_document" "lambda_permissions" {
   statement {
-    sid    = "ReadWriteInputBucket"
+    sid    = "ReadWriteSourcesBucket"
     effect = "Allow"
     actions = [
       "s3:GetObject",
@@ -195,18 +195,18 @@ data "aws_iam_policy_document" "lambda_permissions" {
       "s3:ListBucket",
     ]
     resources = [
-      aws_s3_bucket.input.arn,
-      "${aws_s3_bucket.input.arn}/*",
+      aws_s3_bucket.sources.arn,
+      "${aws_s3_bucket.sources.arn}/*",
     ]
   }
 
   statement {
-    sid    = "WriteOutputBucket"
+    sid    = "WriteReportsBucket"
     effect = "Allow"
     actions = [
       "s3:PutObject",
     ]
-    resources = ["${aws_s3_bucket.output.arn}/*"]
+    resources = ["${aws_s3_bucket.reports.arn}/*"]
   }
 
   statement {
@@ -259,8 +259,8 @@ resource "aws_lambda_function" "agent" {
 
   environment {
     variables = {
-      AWS_S3_INPUT_BUCKET_NAME      = aws_s3_bucket.input.bucket
-      AWS_S3_OUTPUT_BUCKET_NAME     = aws_s3_bucket.output.bucket
+      AWS_S3_SOURCES_BUCKET_NAME    = aws_s3_bucket.sources.bucket
+      AWS_S3_REPORTS_BUCKET_NAME    = aws_s3_bucket.reports.bucket
       SSM_OPENROUTER_PARAM          = aws_ssm_parameter.openrouter_api_key.name
       SSM_TAVILY_PARAM              = aws_ssm_parameter.tavily_api_key.name
       SSM_EMAIL_IMAP_USERNAME_PARAM = aws_ssm_parameter.email_imap_username.name
@@ -310,12 +310,12 @@ resource "aws_iam_user" "server" {
 
 data "aws_iam_policy_document" "server" {
   statement {
-    sid    = "WriteInputBucket"
+    sid    = "WriteSourcesBucket"
     effect = "Allow"
     actions = [
       "s3:PutObject",
     ]
-    resources = ["${aws_s3_bucket.input.arn}/input/*"]
+    resources = ["${aws_s3_bucket.sources.arn}/sources/*"]
   }
 }
 

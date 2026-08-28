@@ -26,8 +26,8 @@ warnings.filterwarnings("ignore", message=r"The default value of `allowed_object
 _ssm = boto3.client("ssm", region_name=os.environ["AWS_REGION_NAME"])
 _s3 = boto3.client("s3", region_name=os.environ["AWS_REGION_NAME"])
 
-INPUT_BUCKET = os.environ["AWS_S3_INPUT_BUCKET_NAME"]
-OUTPUT_BUCKET = os.environ["AWS_S3_OUTPUT_BUCKET_NAME"]
+SOURCES_BUCKET = os.environ["AWS_S3_SOURCES_BUCKET_NAME"]
+REPORTS_BUCKET = os.environ["AWS_S3_REPORTS_BUCKET_NAME"]
 SSM_OPENROUTER_PARAM = os.environ["SSM_OPENROUTER_PARAM"]
 SSM_TAVILY_PARAM = os.environ["SSM_TAVILY_PARAM"]
 SSM_EMAIL_IMAP_USERNAME_PARAM = os.environ["SSM_EMAIL_IMAP_USERNAME_PARAM"]
@@ -66,14 +66,14 @@ def _parse_newsletter_senders(raw: str, default_count: int) -> list[tuple[str, i
 
 def _upload_report(day: str, md_text: str, pdf_bytes: bytes) -> None:
     _s3.put_object(
-        Bucket=OUTPUT_BUCKET,
-        Key=f"output/{day}/report.md",
+        Bucket=REPORTS_BUCKET,
+        Key=f"reports/{day}/report.md",
         Body=md_text.encode("utf-8"),
         ContentType="text/markdown",
     )
     _s3.put_object(
-        Bucket=OUTPUT_BUCKET,
-        Key=f"output/{day}/report.pdf",
+        Bucket=REPORTS_BUCKET,
+        Key=f"reports/{day}/report.pdf",
         Body=pdf_bytes,
         ContentType="application/pdf",
     )
@@ -193,10 +193,10 @@ def _build_graph(
     graph.add_node(
         "email_newsletter_search",
         build_email_newsletter_search_node(
-            email_provider, email_newsletter_senders, _s3, INPUT_BUCKET
+            email_provider, email_newsletter_senders, _s3, SOURCES_BUCKET
         ),
     )
-    graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, INPUT_BUCKET))
+    graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, SOURCES_BUCKET))
     graph.add_node("query_generation", build_query_generation_node(llm, system_prompt))
     graph.add_node("web_search", build_web_search_node(search_providers, search_workers))
     graph.add_node(
@@ -263,6 +263,6 @@ def handler(event, context):
 
     pdf_bytes = _md_to_pdf(md_text)
     _upload_report(today, md_text, pdf_bytes)
-    print(f"[agent] Report uploaded to s3://{OUTPUT_BUCKET}/output/{today}/")
+    print(f"[agent] Report uploaded to s3://{REPORTS_BUCKET}/reports/{today}/")
 
     return {"statusCode": 200, "date": today}

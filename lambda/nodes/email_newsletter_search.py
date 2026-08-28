@@ -44,7 +44,7 @@ def _as_search_result(message: EmailMessage) -> dict:
 
 
 def build_email_newsletter_search_node(
-    email_provider: EmailProvider, senders: list[tuple[str, int]], s3_client, input_bucket: str
+    email_provider: EmailProvider, senders: list[tuple[str, int]], s3_client, sources_bucket: str
 ):
     """`senders` is a list of `(address, count)` pairs — `count` is how many
     of the sender's most recent messages to fetch, set per-sender so a
@@ -90,7 +90,7 @@ def build_email_newsletter_search_node(
                     f"body_chars={len(message.body)}, preview={body_preview!r}"
                 )
 
-                # Uploaded to the same input/ prefix and format the server
+                # Uploaded to the same sources/ prefix and format the server
                 # writes user-submitted snippets to (see server/main.py) —
                 # this makes the newsletter just another snippet for
                 # `news_snippet_getter` to pick up, rather than a separate
@@ -107,9 +107,9 @@ def build_email_newsletter_search_node(
                 # would each get counted separately by `news_snippet_getter`.
                 snippet_bytes = _format_snippet(message).encode("utf-8")
                 content_hash = hashlib.sha256(snippet_bytes).hexdigest()
-                key = f"input/{today}/{content_hash}.txt"
+                key = f"sources/{today}/{content_hash}.txt"
                 s3_client.put_object(
-                    Bucket=input_bucket,
+                    Bucket=sources_bucket,
                     Key=key,
                     Body=snippet_bytes,
                     ContentType="text/plain",
@@ -120,7 +120,7 @@ def build_email_newsletter_search_node(
         if uploaded:
             print(
                 f"[agent] Email newsletter search: uploaded {uploaded} newsletter snippet(s) "
-                f"to s3://{input_bucket}/input/{today}/"
+                f"to s3://{sources_bucket}/sources/{today}/"
             )
         if not newsletter_results:
             return state

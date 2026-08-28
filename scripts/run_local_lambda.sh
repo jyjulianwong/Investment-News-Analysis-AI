@@ -25,8 +25,8 @@ docker run --rm \
     -e AWS_PROFILE="${AWS_PROFILE:-default}" \
     -e INA_DATETIME_OVERRIDE="2026-01-01" \
     -e AWS_REGION_NAME="eu-west-2" \
-    -e AWS_S3_INPUT_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-input" \
-    -e AWS_S3_OUTPUT_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-output" \
+    -e AWS_S3_SOURCES_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
+    -e AWS_S3_REPORTS_BUCKET_NAME="${AWS_ACCOUNT_ID}-jyjulianwong-ina-news-reports" \
     -e SSM_OPENROUTER_PARAM="/jyjulianwong-ina/openrouter_api_key" \
     -e SSM_TAVILY_PARAM="/jyjulianwong-ina/tavily_api_key" \
     -e SSM_EMAIL_IMAP_USERNAME_PARAM="/jyjulianwong-ina/email_imap_username" \

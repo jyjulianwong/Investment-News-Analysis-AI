@@ -11,19 +11,19 @@ I make a habit of reading the news on my way to work every morning... but I know
 ```
 GitHub Pages Client
   └─ POST /snippets ──► Render Server (FastAPI)
-                              └─► S3 input bucket  (input/YYYY-MM-DD/<content-hash>.txt)  ◄──┐
+                              └─► S3 sources bucket  (sources/YYYY-MM-DD/<content-hash>.txt)  ◄──┐
                                         │                                           │ writes newsletter
                               EventBridge (12:00 UTC daily)                         │ snippet, same format
                                         │                                           │
                               Lambda container (LangGraph)                          │
                                 ├─ Email Newsletter Search (IMAP) ──────────────────┘
-                                ├─ News Snippet Getter (reads all of input/YYYY-MM-DD/ back)
+                                ├─ News Snippet Getter (reads all of sources/YYYY-MM-DD/ back)
                                 ├─ Query Generation    (OpenRouter)
                                 ├─ Web Search          (Tavily first, DDGS fallback — priority list)
                                 ├─ Search Evaluator    (retries wider, then falls through providers)
                                 └─ Market Analyst      (OpenRouter)
                                         │
-                                S3 output bucket  (output/YYYY-MM-DD/report.{pdf,md})
+                                S3 reports bucket  (reports/YYYY-MM-DD/report.{pdf,md})
                                         │
                               GitHub Pages Client  ◄─ public S3 links
 ```
@@ -165,8 +165,8 @@ terraform output -raw github_actions_secret_access_key && echo
 terraform output server_access_key_id
 terraform output -raw server_secret_access_key && echo
 
-# Print the output bucket base URL
-terraform output s3_output_bucket_url
+# Print the reports bucket base URL
+terraform output s3_reports_bucket_url
 ```
 
 ### 4. Add GitHub Actions secrets
@@ -216,7 +216,7 @@ In your Render service dashboard → **Environment**, add:
 | `AWS_ACCESS_KEY_ID`            | Render server IAM user access key ID              |
 | `AWS_SECRET_ACCESS_KEY`        | Render server IAM user secret access key          |
 | `AWS_REGION`                   | `eu-west-2`                                       |
-| `AWS_S3_INPUT_BUCKET_NAME`     | Output of `terraform output s3_input_bucket_name` |
+| `AWS_S3_SOURCES_BUCKET_NAME`   | Output of `terraform output s3_sources_bucket_name` |
 | `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`             |
 
 Render **start command:**
@@ -236,7 +236,7 @@ with your actual Render service URL.
 
 In `client/reports.html`, replace the placeholder `S3_BASE` with the value printed by:
 ```bash
-terraform output s3_output_bucket_url
+terraform output s3_reports_bucket_url
 ```
 
 ### 7. Enable GitHub Pages
@@ -250,17 +250,17 @@ In GitHub → **Settings → Pages → Source**, set branch to `gh-pages` and di
 ### Check S3 bucket contents
 
 ```bash
-INPUT_BUCKET=$(terraform -chdir=terraform output -raw s3_input_bucket_name)
-OUTPUT_BUCKET=$(terraform -chdir=terraform output -raw s3_output_bucket_name)
+SOURCES_BUCKET=$(terraform -chdir=terraform output -raw s3_sources_bucket_name)
+REPORTS_BUCKET=$(terraform -chdir=terraform output -raw s3_reports_bucket_name)
 
-# List today's input snippets
-aws s3 ls "s3://$INPUT_BUCKET/input/$(date -u +%Y-%m-%d)/"
+# List today's source snippets
+aws s3 ls "s3://$SOURCES_BUCKET/sources/$(date -u +%Y-%m-%d)/"
 
 # List all available reports
-aws s3 ls "s3://$OUTPUT_BUCKET/output/"
+aws s3 ls "s3://$REPORTS_BUCKET/reports/"
 
 # Download a specific report locally
-aws s3 cp "s3://$OUTPUT_BUCKET/output/YYYY-MM-DD/report.pdf" ./report.pdf
+aws s3 cp "s3://$REPORTS_BUCKET/reports/YYYY-MM-DD/report.pdf" ./report.pdf
 ```
 
 ### Manually trigger the Lambda (for testing)
@@ -349,9 +349,9 @@ aws lambda get-function \
 
 | Time (UTC)  | Event |
 |-------------|-------|
-| Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` |
+| Any time    | User pastes a news snippet on the Submit page; it is stored in `s3://<sources-bucket>/sources/YYYY-MM-DD/<content-hash>.txt` |
 | 12:00       | EventBridge triggers the Lambda |
-| 12:00–12:15 | Lambda fetches each configured newsletter sender's latest message(s) (IMAP) and writes them to `s3://<input-bucket>/input/YYYY-MM-DD/<content-hash>.txt` like any other snippet, reads all of that day's snippets back from S3, then runs the rest of the LangGraph pipeline |
+| 12:00–12:15 | Lambda fetches each configured newsletter sender's latest message(s) (IMAP) and writes them to `s3://<sources-bucket>/sources/YYYY-MM-DD/<content-hash>.txt` like any other snippet, reads all of that day's snippets back from S3, then runs the rest of the LangGraph pipeline |
 | After 12:15 | User visits the Reports page; today's PDF and Markdown report are available |
 
 ---
@@ -376,7 +376,7 @@ aws lambda get-function \
 cd server
 uv sync
 AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
-  AWS_S3_INPUT_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
+  AWS_S3_SOURCES_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
   CLIENT_GITHUB_PAGES_ORIGIN=http://localhost:3000 uv run uvicorn main:app --reload --port 8000
 ```
 
@@ -392,8 +392,8 @@ cd lambda
 docker buildx build --platform linux/amd64 --provenance=false --load -t ina-lambda-agent-test .
 docker run -p 9000:8080 \
   -e AWS_REGION_NAME=eu-west-2 \
-  -e "AWS_S3_INPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-input" \
-  -e "AWS_S3_OUTPUT_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-output" \
+  -e "AWS_S3_SOURCES_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
+  -e "AWS_S3_REPORTS_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-reports" \
   -e "SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key" \
   -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
   -e "SSM_EMAIL_IMAP_USERNAME_PARAM=/jyjulianwong-ina/email_imap_username" \

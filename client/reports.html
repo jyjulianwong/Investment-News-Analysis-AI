@@ -223,9 +223,9 @@
 </main>
 
 <script>
-  // Replace with your actual public S3 output bucket URL after deployment.
+  // Replace with your actual public S3 reports bucket URL after deployment.
   // Format: https://<bucket-name>.s3.<region>.amazonaws.com
-  const S3_BASE = "https://004246189700-jyjulianwong-ina-news-output.s3.eu-west-2.amazonaws.com";
+  const S3_BASE = "https://004246189700-jyjulianwong-ina-news-reports.s3.eu-west-2.amazonaws.com";
 
   const loadingEl    = document.getElementById("loading");
   const errorEl      = document.getElementById("error");
@@ -247,8 +247,8 @@
 
   async function loadReports() {
     try {
-      // List all objects under output/ using the S3 REST list API
-      const url = `${S3_BASE}?list-type=2&prefix=output/&delimiter=/`;
+      // List all objects under reports/ using the S3 REST list API
+      const url = `${S3_BASE}?list-type=2&prefix=reports/&delimiter=/`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`S3 list failed: HTTP ${resp.status}`);
 
@@ -258,8 +258,8 @@
 
       // Each day's folder appears as a <CommonPrefixes><Prefix> element
       const prefixes = Array.from(xml.querySelectorAll("CommonPrefixes > Prefix"))
-        .map(el => el.textContent.trim())   // e.g. "output/2025-11-01/"
-        .map(p => p.replace(/^output\/|\/$/g, ""))  // => "2025-11-01"
+        .map(el => el.textContent.trim())   // e.g. "reports/2025-11-01/"
+        .map(p => p.replace(/^reports\/|\/$/g, ""))  // => "2025-11-01"
         .filter(Boolean)
         .sort()
         .reverse(); // newest first
@@ -293,8 +293,8 @@
       <li class="report-row">
         <span class="report-date">${day}</span>
         <div class="report-links">
-          <a class="btn-pdf" href="${S3_BASE}/output/${day}/report.pdf" target="_blank" rel="noopener">PDF</a>
-          <a class="btn-md"  href="${S3_BASE}/output/${day}/report.md"  target="_blank" rel="noopener">Markdown</a>
+          <a class="btn-pdf" href="${S3_BASE}/reports/${day}/report.pdf" target="_blank" rel="noopener">PDF</a>
+          <a class="btn-md"  href="${S3_BASE}/reports/${day}/report.md"  target="_blank" rel="noopener">Markdown</a>
         </div>
       </li>
     `).join("");
