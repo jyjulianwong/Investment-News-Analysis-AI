@@ -88,22 +88,22 @@ class ImapEmailProvider(EmailProvider):
     """
 
     def __init__(
-        self, host: str, username: str, password: str, port: int = 993, mailbox: str = "INBOX"
+        self, host: str, username: str, password: str, port: int = 993, folder: str = "INBOX"
     ):
         self._host = host
         self._port = port
         self._username = username
         self._password = password
-        self._mailbox = mailbox
+        self._folder = folder
 
     def fetch_latest_from(
         self, sender: str, before: date | None = None, count: int = 1
     ) -> list[EmailMessage]:
         with imaplib.IMAP4_SSL(self._host, self._port) as conn:
             conn.login(self._username, self._password)
-            status, _ = conn.select(self._mailbox, readonly=True)
+            status, _ = conn.select(self._folder, readonly=True)
             if status != "OK":
-                raise RuntimeError(f"Could not select mailbox {self._mailbox!r}: {status}")
+                raise RuntimeError(f"Could not select folder {self._folder!r}: {status}")
 
             search_criteria = ["FROM", f'"{sender}"']
             if before is not None:

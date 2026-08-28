@@ -265,6 +265,7 @@ resource "aws_lambda_function" "agent" {
       SSM_TAVILY_PARAM              = aws_ssm_parameter.tavily_api_key.name
       SSM_EMAIL_IMAP_USERNAME_PARAM = aws_ssm_parameter.email_imap_username.name
       SSM_EMAIL_IMAP_PASSWORD_PARAM = aws_ssm_parameter.email_imap_app_password.name
+      EMAIL_IMAP_FOLDER             = "Newsletters"
       AWS_REGION_NAME               = var.aws_region
     }
   }

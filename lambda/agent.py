@@ -118,6 +118,7 @@ def _build_graph(
         os.environ.get("EMAIL_PROVIDER", "imap"),
         host=os.environ.get("EMAIL_IMAP_HOST", "imap.gmail.com"),
         port=int(os.environ.get("EMAIL_IMAP_PORT", "993")),
+        folder=os.environ.get("EMAIL_IMAP_FOLDER", "INBOX"),
         username=email_imap_username,
         password=email_imap_password,
     )

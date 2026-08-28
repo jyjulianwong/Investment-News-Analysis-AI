@@ -31,6 +31,7 @@ docker run --rm \
     -e SSM_TAVILY_PARAM="/jyjulianwong-ina/tavily_api_key" \
     -e SSM_EMAIL_IMAP_USERNAME_PARAM="/jyjulianwong-ina/email_imap_username" \
     -e SSM_EMAIL_IMAP_PASSWORD_PARAM="/jyjulianwong-ina/email_imap_app_password" \
+    -e EMAIL_IMAP_FOLDER="${EMAIL_IMAP_FOLDER:-INBOX}" \
     -e PYTHONUNBUFFERED=1 \
     --entrypoint python \
     jyjulianwong-ina-lambda-agent-local \
