@@ -127,7 +127,7 @@ def _build_graph(
             "EMAIL_NEWSLETTER_SENDERS",
             "brewmarkets@morningbrew.com,"
             "FT@news-alerts.ft.com:3,"
-            "noreply@newsletter.thetimes.com:2"
+            "noreply@newsletter.thetimes.com:2,"
             "noreply@newsletter.thetimes.co.uk:2",
         ),
         default_count=int(os.environ.get("EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT", "1")),
