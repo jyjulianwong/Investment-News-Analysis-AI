@@ -282,8 +282,8 @@ resource "aws_lambda_function" "agent" {
 
 resource "aws_cloudwatch_event_rule" "agent_daily_noon" {
   name                = "${local.scoped_prefix}-agent-daily-noon"
-  description         = "Trigger the '${local.scoped_prefix}-agent' Lambda function at 12:00 UTC daily"
-  schedule_expression = "cron(0 12 ? * MON-SAT *)"
+  description         = "Trigger the '${local.scoped_prefix}-agent' Lambda function at 12:00 UTC on weekdays"
+  schedule_expression = "cron(0 12 ? * MON-FRI *)"
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {
