@@ -3,8 +3,9 @@ import os
 from datetime import datetime, timezone
 
 import boto3
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from obsidian_auth import require_device
 from pydantic import BaseModel, field_validator
 
 app = FastAPI(title="Investment News Analysis API")
@@ -16,7 +17,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[_ALLOWED_ORIGIN] if _ALLOWED_ORIGIN else ["*"],
     allow_methods=["POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 _s3 = boto3.client(
@@ -53,7 +54,7 @@ class SnippetRequest(BaseModel):
 
 
 @app.post("/snippets", status_code=200)
-def submit_snippet(body: SnippetRequest):
+def submit_snippet(body: SnippetRequest, device_id: str = Depends(require_device)):
     today = _today_utc()
     # Keyed by a content hash rather than a random uuid, so a duplicate
     # submission (e.g. a retried request) overwrites the same object instead

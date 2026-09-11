@@ -199,6 +199,10 @@
     <div class="char-count"><span id="char-num">0</span> / 10,000</div>
 
     <button id="send">Send</button>
+    <p class="subtitle" style="margin-top:10px; margin-bottom:0;">
+      Sending requires a device certificate authorized via Obsidian — this feature is
+      restricted to the site owner's own devices.
+    </p>
     <div id="status"></div>
 
     <div class="submissions" id="submissions-section" style="display:none">
@@ -210,6 +214,22 @@
 
 <script>
   const API_BASE = "https://investment-news-analysis-ai.onrender.com";
+  // Obsidian (https://github.com/jyjulianwong/Obsidian-Server) issues short-lived
+  // access tokens only to devices with an installed client certificate — this is
+  // what restricts "Send" to the site owner's own devices. The browser shows a
+  // one-time-per-profile certificate picker on the first request; on a device
+  // without an authorized cert, the request simply fails (no cert to offer, or
+  // the picker is dismissed), which surfaces as a normal submission error below.
+  const OBSIDIAN_ISSUER = "https://auth.jyjwong.com";
+
+  async function getObsidianAccessToken() {
+    const resp = await fetch(`${OBSIDIAN_ISSUER}/auth/token`, { method: "POST" });
+    if (!resp.ok) {
+      throw new Error("Device not authorized to submit snippets");
+    }
+    const { access_token } = await resp.json();
+    return access_token;
+  }
 
   const snippetEl = document.getElementById("snippet");
   const charNumEl = document.getElementById("char-num");
@@ -270,9 +290,14 @@
     statusEl.className = "";
 
     try {
+      const accessToken = await getObsidianAccessToken();
+
       const resp = await fetch(`${API_BASE}/snippets`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ text }),
       });
 
