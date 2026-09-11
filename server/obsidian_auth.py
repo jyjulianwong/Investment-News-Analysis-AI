@@ -15,7 +15,13 @@ from fastapi import Header, HTTPException
 from jwt import PyJWKClient
 
 OBSIDIAN_ISSUER = os.environ.get("OBSIDIAN_ISSUER", "https://auth.jyjwong.com")
-_JWKS_URL = f"{OBSIDIAN_ISSUER}/.well-known/jwks.json"
+# Deliberately a separate domain from OBSIDIAN_ISSUER, not a path under it:
+# auth.jyjwong.com requires a client certificate for every route (API
+# Gateway enforces mTLS per-domain, not per-route), so a resource server
+# with no device cert of its own — like this one — gets a TLS-level
+# connection reset trying to fetch JWKS from there. jwks.jyjwong.com is a
+# separate, non-mTLS API Gateway domain that serves only that route.
+_JWKS_URL = os.environ.get("OBSIDIAN_JWKS_URL", "https://jwks.jyjwong.com/.well-known/jwks.json")
 
 # PyJWKClient caches keys in-memory and only re-fetches the JWKS when it sees
 # an unrecognized `kid` — cheap enough to construct once at import time.
