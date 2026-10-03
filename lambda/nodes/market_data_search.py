@@ -309,8 +309,10 @@ def _apply_insertions(
             continue
         evidence = _compose_evidence(snapshot, item["commentary"])
         span = (
-            f' <span class="ina-market-data">{evidence} '
-            f"(Yahoo Finance market data, retrieved {today})</span>"
+            f' <span class="ina-market-data">'
+            f'<span class="ina-market-data-label">Evidence</span> '
+            f"{evidence} (Yahoo Finance market data, retrieved {today})"
+            f"</span>"
         )
         report_md = report_md[:insert_at] + span + report_md[insert_at:]
     return report_md

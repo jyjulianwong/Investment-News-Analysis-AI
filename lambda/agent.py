@@ -90,7 +90,25 @@ h2 { color: #2c5f8a; margin-top: 2em; }
 h3 { color: #3a7ab8; }
 code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
 blockquote { border-left: 4px solid #ccc; margin-left: 0; padding-left: 16px; color: #555; }
-.ina-market-data { color: #999; }
+.ina-market-data {
+  color: #888;
+  background-color: #eeeeee;
+  font-style: italic;
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.ina-market-data-label {
+  font-style: normal;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.85em;
+  color: #999999;
+  margin-right: 3px;
+}
 """
 
 
