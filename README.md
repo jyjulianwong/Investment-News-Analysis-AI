@@ -13,7 +13,7 @@ GitHub Pages Client
   └─ POST /snippets ──► Render Server (FastAPI)
                               └─► S3 sources bucket  (sources/YYYY-MM-DD/<content-hash>.txt)  ◄──┐
                                         │                                           │ writes newsletter
-                              EventBridge (12:00 UTC daily)                         │ snippet, same format
+                              EventBridge (10:00 UTC, Mon–Fri)                      │ snippet, same format
                                         │                                           │
                               Lambda container (LangGraph)                          │
                                 ├─ Email Newsletter Search (IMAP) ──────────────────┘
