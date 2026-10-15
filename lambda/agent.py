@@ -158,13 +158,17 @@ def _build_graph(
 
     llm_provider = os.environ.get("LLM_PROVIDER", "openrouter")
     if llm_provider == "openai":
-        # Reasoning models (o-series, gpt-5*) reject a custom `temperature` —
-        # only set it when reasoning effort isn't in play.
+        # Reasoning models (o-series, gpt-5*, gpt-6*) reject a custom
+        # `temperature` — only `1` (the API default) is accepted. The pinned
+        # langchain-openai version always sends `temperature` regardless
+        # (defaults to 0.7 if omitted), so it must be set explicitly here
+        # rather than left out.
         reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT")
         if reasoning_effort:
             llm = ChatOpenAI(
                 model=os.environ.get("OPENAI_MODEL", "gpt-6-luna"),
                 openai_api_key=openai_key,
+                temperature=1,
                 reasoning_effort=reasoning_effort,
             )
         else:
