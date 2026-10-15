@@ -164,21 +164,34 @@ def _build_graph(
         # (defaults to 0.7 if omitted), so it must be set explicitly here
         # rather than left out.
         reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT")
+        openai_model = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
         if reasoning_effort:
-            llm = ChatOpenAI(
-                model=os.environ.get("OPENAI_MODEL", "gpt-6-luna"),
+            main_llm = ChatOpenAI(
+                model=openai_model,
                 openai_api_key=openai_key,
                 temperature=1,
                 reasoning_effort=reasoning_effort,
             )
+            # Chat Completions rejects function tools combined with
+            # reasoning_effort ("Function tools with reasoning_effort are
+            # not supported ... use /v1/responses or set reasoning_effort to
+            # 'none'"). Market Data Search is the only node that binds
+            # tools, so it gets its own instance with reasoning_effort
+            # dropped instead of switching every node to the Responses API.
+            tool_llm = ChatOpenAI(
+                model=openai_model,
+                openai_api_key=openai_key,
+                temperature=1,
+            )
         else:
-            llm = ChatOpenAI(
-                model=os.environ.get("OPENAI_MODEL", "gpt-6-luna"),
+            main_llm = ChatOpenAI(
+                model=openai_model,
                 openai_api_key=openai_key,
                 temperature=0.4,
             )
+            tool_llm = main_llm
     else:
-        llm = ChatOpenAI(
+        main_llm = ChatOpenAI(
             model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
             openai_api_key=openrouter_key,
             openai_api_base="https://openrouter.ai/api/v1",
@@ -188,6 +201,7 @@ def _build_graph(
                 "X-Title": "Investment News Analysis AI",
             },
         )
+        tool_llm = main_llm
 
     system_prompt = PROMPTS_ENV.get_template("system.j2").render()
 
@@ -243,14 +257,14 @@ def _build_graph(
         ),
     )
     graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, SOURCES_BUCKET))
-    graph.add_node("query_generation", build_query_generation_node(llm, system_prompt))
+    graph.add_node("query_generation", build_query_generation_node(main_llm, system_prompt))
     graph.add_node("web_search", build_web_search_node(search_providers, search_workers))
     graph.add_node(
         "search_evaluator",
         build_search_evaluator_node(min_results, min_domains, search_providers),
     )
-    graph.add_node("market_analyst", build_market_analyst_node(llm, system_prompt))
-    graph.add_node("market_data_search", build_market_data_search_node(llm, system_prompt))
+    graph.add_node("market_analyst", build_market_analyst_node(main_llm, system_prompt))
+    graph.add_node("market_data_search", build_market_data_search_node(tool_llm, system_prompt))
     graph.add_node("report_verifier", report_verifier_node)
 
     graph.set_entry_point("email_newsletter_search")
