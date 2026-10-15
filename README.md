@@ -396,6 +396,8 @@ docker run -p 9000:8080 \
   -e "AWS_S3_SOURCES_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
   -e "AWS_S3_REPORTS_BUCKET_NAME=${ACCOUNT_ID}-jyjulianwong-ina-news-reports" \
   -e "SSM_OPENROUTER_PARAM=/jyjulianwong-ina/openrouter_api_key" \
+  -e "SSM_OPENAI_PARAM=/jyjulianwong-ina/openai_api_key" \
+  -e "LLM_PROVIDER=openrouter" \
   -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
   -e "SSM_EMAIL_IMAP_USERNAME_PARAM=/jyjulianwong-ina/email_imap_username" \
   -e "SSM_EMAIL_IMAP_PASSWORD_PARAM=/jyjulianwong-ina/email_imap_app_password" \

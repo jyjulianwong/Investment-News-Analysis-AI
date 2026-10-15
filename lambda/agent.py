@@ -158,11 +158,11 @@ def _build_graph(
 
     llm_provider = os.environ.get("LLM_PROVIDER", "openrouter")
     if llm_provider == "openai":
-        # Reasoning models (o-series, gpt-5*, gpt-6*) reject a custom
-        # `temperature` — only `1` (the API default) is accepted. The pinned
-        # langchain-openai version always sends `temperature` regardless
-        # (defaults to 0.7 if omitted), so it must be set explicitly here
-        # rather than left out.
+        # `gpt-6-luna` rejects any non-default temperature, with or without
+        # reasoning_effort — only `1` (the API's own default) is accepted.
+        # The pinned `langchain-openai` version always sends `temperature`
+        # regardless (defaults to `0.7` if omitted), so it must be set
+        # explicitly here rather than left out.
         reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT")
         openai_model = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
         if reasoning_effort:
@@ -175,19 +175,23 @@ def _build_graph(
             # Chat Completions rejects function tools combined with
             # reasoning_effort ("Function tools with reasoning_effort are
             # not supported ... use /v1/responses or set reasoning_effort to
-            # 'none'"). Market Data Search is the only node that binds
-            # tools, so it gets its own instance with reasoning_effort
-            # dropped instead of switching every node to the Responses API.
+            # 'none'"). `gpt-6-luna` reasons by default even when the param
+            # is omitted (omitting it is NOT the same as disabling it), so
+            # the tool-calling instance must pass the literal string
+            # "none" — not Python None, which just gets excluded from the
+            # request and leaves the model's own default reasoning active.
             tool_llm = ChatOpenAI(
                 model=openai_model,
                 openai_api_key=openai_key,
                 temperature=1,
+                reasoning_effort="none",
             )
         else:
             main_llm = ChatOpenAI(
                 model=openai_model,
                 openai_api_key=openai_key,
-                temperature=0.4,
+                temperature=1,
+                reasoning_effort="none",
             )
             tool_llm = main_llm
     else:
