@@ -29,6 +29,7 @@ _s3 = boto3.client("s3", region_name=os.environ["AWS_REGION_NAME"])
 SOURCES_BUCKET = os.environ["AWS_S3_SOURCES_BUCKET_NAME"]
 REPORTS_BUCKET = os.environ["AWS_S3_REPORTS_BUCKET_NAME"]
 SSM_OPENROUTER_PARAM = os.environ["SSM_OPENROUTER_PARAM"]
+SSM_OPENAI_PARAM = os.environ["SSM_OPENAI_PARAM"]
 SSM_TAVILY_PARAM = os.environ["SSM_TAVILY_PARAM"]
 SSM_EMAIL_IMAP_USERNAME_PARAM = os.environ["SSM_EMAIL_IMAP_USERNAME_PARAM"]
 SSM_EMAIL_IMAP_PASSWORD_PARAM = os.environ["SSM_EMAIL_IMAP_PASSWORD_PARAM"]
@@ -124,7 +125,11 @@ def _md_to_pdf(md_text: str) -> bytes:
 
 
 def _build_graph(
-    openrouter_key: str, tavily_key: str, email_imap_username: str, email_imap_password: str
+    openrouter_key: str,
+    openai_key: str,
+    tavily_key: str,
+    email_imap_username: str,
+    email_imap_password: str,
 ):
     """Build and return the compiled LangGraph graph. Called once per warm start."""
     from email_providers.factory import build_email_provider
@@ -151,16 +156,34 @@ def _build_graph(
         default_count=int(os.environ.get("EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT", "1")),
     )
 
-    llm = ChatOpenAI(
-        model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
-        openai_api_key=openrouter_key,
-        openai_api_base="https://openrouter.ai/api/v1",
-        temperature=0.4,
-        default_headers={
-            "HTTP-Referer": "https://github.com/jyjulianwong/Investment-News-Analysis-AI",
-            "X-Title": "Investment News Analysis AI",
-        },
-    )
+    llm_provider = os.environ.get("LLM_PROVIDER", "openrouter")
+    if llm_provider == "openai":
+        # Reasoning models (o-series, gpt-5*) reject a custom `temperature` —
+        # only set it when reasoning effort isn't in play.
+        reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT")
+        if reasoning_effort:
+            llm = ChatOpenAI(
+                model=os.environ.get("OPENAI_MODEL", "gpt-6-luna"),
+                openai_api_key=openai_key,
+                reasoning_effort=reasoning_effort,
+            )
+        else:
+            llm = ChatOpenAI(
+                model=os.environ.get("OPENAI_MODEL", "gpt-6-luna"),
+                openai_api_key=openai_key,
+                temperature=0.4,
+            )
+    else:
+        llm = ChatOpenAI(
+            model=os.environ.get("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
+            openai_api_key=openrouter_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            temperature=0.4,
+            default_headers={
+                "HTTP-Referer": "https://github.com/jyjulianwong/Investment-News-Analysis-AI",
+                "X-Title": "Investment News Analysis AI",
+            },
+        )
 
     system_prompt = PROMPTS_ENV.get_template("system.j2").render()
 
@@ -257,13 +280,16 @@ def handler(event, context):
     print(f"[agent] Starting run for {today}")
 
     openrouter_key = _get_secret(SSM_OPENROUTER_PARAM)
+    openai_key = _get_secret(SSM_OPENAI_PARAM)
     tavily_key = _get_secret(SSM_TAVILY_PARAM)
     email_imap_username = _get_secret(SSM_EMAIL_IMAP_USERNAME_PARAM)
     email_imap_password = _get_secret(SSM_EMAIL_IMAP_PASSWORD_PARAM)
 
     global _graph
     if _graph is None:
-        _graph = _build_graph(openrouter_key, tavily_key, email_imap_username, email_imap_password)
+        _graph = _build_graph(
+            openrouter_key, openai_key, tavily_key, email_imap_username, email_imap_password
+        )
 
     # snippets starts empty — email_newsletter_search and news_snippet_getter
     # populate it from S3 as the first two graph nodes (see _build_graph),

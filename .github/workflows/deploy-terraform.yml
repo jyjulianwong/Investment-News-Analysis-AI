@@ -59,10 +59,31 @@ jobs:
           terraform plan \
             -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
             -var="openrouter_api_key=${{ secrets.OPENROUTER_API_KEY }}" \
+            -var="openai_api_key=${{ secrets.OPENAI_API_KEY }}" \
             -var="tavily_api_key=${{ secrets.TAVILY_API_KEY }}" \
             -var="email_imap_username=${{ secrets.EMAIL_IMAP_USERNAME }}" \
             -var="email_imap_app_password=${{ secrets.EMAIL_IMAP_APP_PASSWORD }}" \
             -var="client_github_pages_origin=${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}" \
+            -var="llm_provider=${{ vars.LLM_PROVIDER || 'openrouter' }}" \
+            -var="openrouter_model=${{ vars.OPENROUTER_MODEL || 'google/gemini-3-flash-preview' }}" \
+            -var="openai_model=${{ vars.OPENAI_MODEL || 'gpt-6-luna' }}" \
+            -var="openai_reasoning_effort=${{ vars.OPENAI_REASONING_EFFORT || '' }}" \
+            -var="email_provider=${{ vars.EMAIL_PROVIDER || 'imap' }}" \
+            -var="email_imap_host=${{ vars.EMAIL_IMAP_HOST || 'imap.gmail.com' }}" \
+            -var="email_imap_port=${{ vars.EMAIL_IMAP_PORT || '993' }}" \
+            -var="email_imap_folder=${{ vars.EMAIL_IMAP_FOLDER || 'Newsletters' }}" \
+            -var="email_newsletter_senders=${{ vars.EMAIL_NEWSLETTER_SENDERS || 'brewmarkets@morningbrew.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2' }}" \
+            -var="email_newsletter_default_fetch_count=${{ vars.EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT || '1' }}" \
+            -var="web_search_providers=${{ vars.WEB_SEARCH_PROVIDERS || 'tavily,ddgs' }}" \
+            -var="tavily_max_results=${{ vars.TAVILY_MAX_RESULTS || '10' }}" \
+            -var="tavily_search_depth=${{ vars.TAVILY_SEARCH_DEPTH || 'advanced' }}" \
+            -var="tavily_topic=${{ vars.TAVILY_TOPIC || 'news' }}" \
+            -var="tavily_include_domains=${{ vars.TAVILY_INCLUDE_DOMAINS || 'reuters.com,apnews.com,cnbc.com,marketwatch.com,investing.com,tradingeconomics.com,federalreserve.gov,bis.org,imf.org,finance.yahoo.com,theguardian.com' }}" \
+            -var="tavily_search_workers=${{ vars.TAVILY_SEARCH_WORKERS || '5' }}" \
+            -var="ddgs_max_results=${{ vars.DDGS_MAX_RESULTS || '10' }}" \
+            -var="evaluator_min_results=${{ vars.EVALUATOR_MIN_RESULTS || '5' }}" \
+            -var="evaluator_min_domains=${{ vars.EVALUATOR_MIN_DOMAINS || '3' }}" \
+            -var="market_data_max_tool_calls=${{ vars.MARKET_DATA_MAX_TOOL_CALLS || '8' }}" \
             -no-color \
             -out=tfplan
         continue-on-error: true
@@ -152,10 +173,31 @@ jobs:
           terraform apply \
             -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
             -var="openrouter_api_key=${{ secrets.OPENROUTER_API_KEY }}" \
+            -var="openai_api_key=${{ secrets.OPENAI_API_KEY }}" \
             -var="tavily_api_key=${{ secrets.TAVILY_API_KEY }}" \
             -var="email_imap_username=${{ secrets.EMAIL_IMAP_USERNAME }}" \
             -var="email_imap_app_password=${{ secrets.EMAIL_IMAP_APP_PASSWORD }}" \
             -var="client_github_pages_origin=${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}" \
+            -var="llm_provider=${{ vars.LLM_PROVIDER || 'openrouter' }}" \
+            -var="openrouter_model=${{ vars.OPENROUTER_MODEL || 'google/gemini-3-flash-preview' }}" \
+            -var="openai_model=${{ vars.OPENAI_MODEL || 'gpt-6-luna' }}" \
+            -var="openai_reasoning_effort=${{ vars.OPENAI_REASONING_EFFORT || '' }}" \
+            -var="email_provider=${{ vars.EMAIL_PROVIDER || 'imap' }}" \
+            -var="email_imap_host=${{ vars.EMAIL_IMAP_HOST || 'imap.gmail.com' }}" \
+            -var="email_imap_port=${{ vars.EMAIL_IMAP_PORT || '993' }}" \
+            -var="email_imap_folder=${{ vars.EMAIL_IMAP_FOLDER || 'Newsletters' }}" \
+            -var="email_newsletter_senders=${{ vars.EMAIL_NEWSLETTER_SENDERS || 'brewmarkets@morningbrew.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2' }}" \
+            -var="email_newsletter_default_fetch_count=${{ vars.EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT || '1' }}" \
+            -var="web_search_providers=${{ vars.WEB_SEARCH_PROVIDERS || 'tavily,ddgs' }}" \
+            -var="tavily_max_results=${{ vars.TAVILY_MAX_RESULTS || '10' }}" \
+            -var="tavily_search_depth=${{ vars.TAVILY_SEARCH_DEPTH || 'advanced' }}" \
+            -var="tavily_topic=${{ vars.TAVILY_TOPIC || 'news' }}" \
+            -var="tavily_include_domains=${{ vars.TAVILY_INCLUDE_DOMAINS || 'reuters.com,apnews.com,cnbc.com,marketwatch.com,investing.com,tradingeconomics.com,federalreserve.gov,bis.org,imf.org,finance.yahoo.com,theguardian.com' }}" \
+            -var="tavily_search_workers=${{ vars.TAVILY_SEARCH_WORKERS || '5' }}" \
+            -var="ddgs_max_results=${{ vars.DDGS_MAX_RESULTS || '10' }}" \
+            -var="evaluator_min_results=${{ vars.EVALUATOR_MIN_RESULTS || '5' }}" \
+            -var="evaluator_min_domains=${{ vars.EVALUATOR_MIN_DOMAINS || '3' }}" \
+            -var="market_data_max_tool_calls=${{ vars.MARKET_DATA_MAX_TOOL_CALLS || '8' }}" \
             -auto-approve \
             -no-color
 

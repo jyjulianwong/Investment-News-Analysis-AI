@@ -109,6 +109,13 @@ resource "aws_ssm_parameter" "openrouter_api_key" {
   description = "OpenRouter API key for the Lambda LangGraph agent"
 }
 
+resource "aws_ssm_parameter" "openai_api_key" {
+  name        = "/${local.scoped_prefix}/openai_api_key"
+  type        = "SecureString"
+  value       = var.openai_api_key
+  description = "OpenAI API key for the Lambda LangGraph agent"
+}
+
 resource "aws_ssm_parameter" "tavily_api_key" {
   name        = "/${local.scoped_prefix}/tavily_api_key"
   type        = "SecureString"
@@ -217,6 +224,7 @@ data "aws_iam_policy_document" "lambda_permissions" {
     ]
     resources = [
       aws_ssm_parameter.openrouter_api_key.arn,
+      aws_ssm_parameter.openai_api_key.arn,
       aws_ssm_parameter.tavily_api_key.arn,
       aws_ssm_parameter.email_imap_username.arn,
       aws_ssm_parameter.email_imap_app_password.arn,
@@ -259,14 +267,40 @@ resource "aws_lambda_function" "agent" {
 
   environment {
     variables = {
-      AWS_S3_SOURCES_BUCKET_NAME    = aws_s3_bucket.sources.bucket
-      AWS_S3_REPORTS_BUCKET_NAME    = aws_s3_bucket.reports.bucket
+      AWS_S3_SOURCES_BUCKET_NAME = aws_s3_bucket.sources.bucket
+      AWS_S3_REPORTS_BUCKET_NAME = aws_s3_bucket.reports.bucket
+      AWS_REGION_NAME            = var.aws_region
+
       SSM_OPENROUTER_PARAM          = aws_ssm_parameter.openrouter_api_key.name
+      SSM_OPENAI_PARAM              = aws_ssm_parameter.openai_api_key.name
       SSM_TAVILY_PARAM              = aws_ssm_parameter.tavily_api_key.name
       SSM_EMAIL_IMAP_USERNAME_PARAM = aws_ssm_parameter.email_imap_username.name
       SSM_EMAIL_IMAP_PASSWORD_PARAM = aws_ssm_parameter.email_imap_app_password.name
-      EMAIL_IMAP_FOLDER             = "Newsletters"
-      AWS_REGION_NAME               = var.aws_region
+
+      LLM_PROVIDER            = var.llm_provider
+      OPENROUTER_MODEL        = var.openrouter_model
+      OPENAI_MODEL            = var.openai_model
+      OPENAI_REASONING_EFFORT = var.openai_reasoning_effort
+
+      EMAIL_PROVIDER                       = var.email_provider
+      EMAIL_IMAP_HOST                      = var.email_imap_host
+      EMAIL_IMAP_PORT                      = var.email_imap_port
+      EMAIL_IMAP_FOLDER                    = var.email_imap_folder
+      EMAIL_NEWSLETTER_SENDERS             = var.email_newsletter_senders
+      EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT = var.email_newsletter_default_fetch_count
+
+      WEB_SEARCH_PROVIDERS   = var.web_search_providers
+      TAVILY_MAX_RESULTS     = var.tavily_max_results
+      TAVILY_SEARCH_DEPTH    = var.tavily_search_depth
+      TAVILY_TOPIC           = var.tavily_topic
+      TAVILY_INCLUDE_DOMAINS = var.tavily_include_domains
+      TAVILY_SEARCH_WORKERS  = var.tavily_search_workers
+      DDGS_MAX_RESULTS       = var.ddgs_max_results
+
+      EVALUATOR_MIN_RESULTS = var.evaluator_min_results
+      EVALUATOR_MIN_DOMAINS = var.evaluator_min_domains
+
+      MARKET_DATA_MAX_TOOL_CALLS = var.market_data_max_tool_calls
     }
   }
 
