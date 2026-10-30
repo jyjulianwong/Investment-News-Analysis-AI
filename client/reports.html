@@ -8,42 +8,54 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="site.webmanifest">
-  <meta name="theme-color" content="#1a3a5c">
+  <meta name="theme-color" content="#060913">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="ias-design-system.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     button, input, textarea, select { font-family: inherit; }
 
     body {
-      font-family: "Open Sans", sans-serif;
-      background: #f5f7fa;
-      color: #222;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
 
     header {
-      position: relative;
-      background: #1a3a5c;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(6, 9, 19, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       color: #fff;
       padding: 18px 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    header h1 { font-size: 1.2rem; font-weight: 600; letter-spacing: 0.01em; }
+    header h3 {
+      font-family: "Playfair Display", Georgia, serif;
+      font-size: 1.2rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
     header nav a {
-      color: #a8c8e8;
+      color: #94a3b8;
       text-decoration: none;
       font-size: 0.9rem;
       margin-left: 24px;
+      transition: color 0.2s ease;
     }
-    header nav a:hover { color: #fff; }
-    header nav a.active { color: #fff; font-weight: 600; }
+    header nav a:hover { color: #e2e8f0; }
+    header nav a.active { color: var(--ias-gold); font-weight: 600; }
 
     .nav-toggle {
       display: none;
@@ -60,7 +72,7 @@
       display: block;
       height: 2px;
       width: 100%;
-      background: #fff;
+      background: #e2e8f0;
       border-radius: 1px;
       transition: transform 0.2s ease, opacity 0.2s ease;
     }
@@ -77,15 +89,16 @@
         left: 0;
         right: 0;
         flex-direction: column;
-        background: #1a3a5c;
+        background: rgba(10, 15, 31, 0.97);
+        backdrop-filter: blur(14px);
         padding: 8px 32px 16px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 12px 24px -12px rgba(0, 0, 0, 0.6);
       }
       header nav.open { display: flex; }
       header nav a {
         margin-left: 0;
         padding: 10px 0;
-        border-top: 1px solid rgba(255,255,255,0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
       }
       header nav a:first-child { border-top: none; }
     }
@@ -99,14 +112,17 @@
     }
 
     .card {
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
       padding: 32px;
     }
 
-    .card h2 { font-size: 1.1rem; margin-bottom: 8px; color: #1a3a5c; }
-    .card p.subtitle { font-size: 0.88rem; color: #666; margin-bottom: 28px; }
+    .card h2 {
+      font-family: "Playfair Display", Georgia, serif;
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #f1f5f9;
+    }
+    .card p.subtitle { font-size: 0.9rem; color: #94a3b8; margin-bottom: 28px; line-height: 1.6; }
 
     #reports-list { list-style: none; }
 
@@ -115,38 +131,42 @@
       align-items: center;
       justify-content: space-between;
       padding: 14px 0;
-      border-bottom: 1px solid #eef1f5;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
     }
     .report-row:last-child { border-bottom: none; }
 
     .report-date {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: #1a3a5c;
-    }
-
-    .report-links { display: flex; gap: 12px; }
-    .report-links a {
-      font-size: 0.83rem;
-      padding: 5px 14px;
-      border-radius: 4px;
-      text-decoration: none;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
       font-weight: 500;
-      transition: opacity 0.15s;
-    }
-    .report-links a:hover { opacity: 0.8; }
-    .btn-pdf {
-      background: #1a3a5c;
-      color: #fff;
-    }
-    .btn-md {
-      background: #e8f0f8;
-      color: #1a3a5c;
+      font-size: 0.92rem;
+      color: #cbd5e1;
     }
 
-    #loading { color: #888; font-size: 0.9rem; }
-    #error   { color: #c0392b; font-size: 0.88rem; }
-    #empty   { color: #888; font-size: 0.88rem; }
+    .report-links { display: flex; gap: 10px; }
+    .report-links a {
+      font-size: 0.8rem;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: transform 0.2s var(--ias-ease-out-expo), opacity 0.2s ease, border-color 0.2s ease;
+    }
+    .report-links a:hover { transform: translateY(-1px); }
+    .btn-pdf {
+      background: linear-gradient(120deg, var(--ias-gold-soft) 0%, var(--ias-gold) 60%, var(--ias-gold-deep) 100%);
+      color: #1a1203;
+    }
+    .btn-pdf:hover { opacity: 0.92; }
+    .btn-md {
+      background: rgba(255, 255, 255, 0.04);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .btn-md:hover { border-color: var(--ias-gold); color: var(--ias-gold-soft); }
+
+    #loading { color: #94a3b8; font-size: 0.9rem; }
+    #error   { color: #f3a5a5; font-size: 0.88rem; }
+    #empty   { color: #94a3b8; font-size: 0.88rem; }
 
     .pagination {
       display: flex;
@@ -156,23 +176,23 @@
       gap: 6px;
       margin-top: 24px;
       padding-top: 20px;
-      border-top: 1px solid #eef1f5;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
     }
     .pagination button {
       min-width: 32px;
       height: 32px;
       padding: 0 8px;
-      border: 1px solid #dde3ea;
-      background: #fff;
-      color: #1a3a5c;
-      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+      color: #cbd5e1;
+      border-radius: 9999px;
       font-size: 0.85rem;
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
+      transition: border-color 0.2s ease, color 0.2s ease;
     }
-    .pagination button:hover:not(:disabled) { background: #e8f0f8; }
+    .pagination button:hover:not(:disabled) { border-color: var(--ias-gold); color: var(--ias-gold-soft); }
     .pagination button:disabled {
-      color: #bbb;
+      color: #475569;
       cursor: not-allowed;
     }
     .pagination-jump {
@@ -181,20 +201,25 @@
       gap: 6px;
       margin: 0 4px;
       font-size: 0.83rem;
-      color: #666;
+      color: #94a3b8;
       white-space: nowrap;
     }
     .pagination-jump select {
       padding: 4px 6px;
-      border: 1px solid #dde3ea;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 4px;
       font-size: 0.83rem;
-      color: #222;
-      background: #fff;
+      color: #e2e8f0;
+      background: rgba(10, 15, 31, 0.9);
     }
   </style>
 </head>
 <body>
+
+<div class="ias-aurora" aria-hidden="true">
+  <div class="ias-orb" style="width: 32rem; height: 32rem; top: -10rem; left: -8rem; background: var(--ias-gold-deep);"></div>
+  <div class="ias-orb" style="width: 28rem; height: 28rem; top: 20rem; right: -10rem; background: var(--ias-mint-deep); animation-delay: -12s;"></div>
+</div>
 
 <header>
   <h3>Investment News Analysis AI</h3>
@@ -208,7 +233,7 @@
 </header>
 
 <main>
-  <div class="card">
+  <div class="card ias-glass ias-animate-fly-in">
     <h2>Daily Reports</h2>
     <p class="subtitle">
       Reports are generated automatically at 10:00 UTC, Monday to Friday.

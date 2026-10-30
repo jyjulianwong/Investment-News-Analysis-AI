@@ -8,42 +8,54 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="site.webmanifest">
-  <meta name="theme-color" content="#1a3a5c">
+  <meta name="theme-color" content="#060913">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="ias-design-system.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     button, input, textarea, select { font-family: inherit; }
 
     body {
-      font-family: "Open Sans", sans-serif;
-      background: #f5f7fa;
-      color: #222;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
 
     header {
-      position: relative;
-      background: #1a3a5c;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(6, 9, 19, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       color: #fff;
       padding: 18px 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    header h1 { font-size: 1.2rem; font-weight: 600; letter-spacing: 0.01em; }
+    header h3 {
+      font-family: "Playfair Display", Georgia, serif;
+      font-size: 1.2rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
     header nav a {
-      color: #a8c8e8;
+      color: #94a3b8;
       text-decoration: none;
       font-size: 0.9rem;
       margin-left: 24px;
+      transition: color 0.2s ease;
     }
-    header nav a:hover { color: #fff; }
-    header nav a.active { color: #fff; font-weight: 600; }
+    header nav a:hover { color: #e2e8f0; }
+    header nav a.active { color: var(--ias-gold); font-weight: 600; }
 
     .nav-toggle {
       display: none;
@@ -60,7 +72,7 @@
       display: block;
       height: 2px;
       width: 100%;
-      background: #fff;
+      background: #e2e8f0;
       border-radius: 1px;
       transition: transform 0.2s ease, opacity 0.2s ease;
     }
@@ -77,15 +89,16 @@
         left: 0;
         right: 0;
         flex-direction: column;
-        background: #1a3a5c;
+        background: rgba(10, 15, 31, 0.97);
+        backdrop-filter: blur(14px);
         padding: 8px 32px 16px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 12px 24px -12px rgba(0, 0, 0, 0.6);
       }
       header nav.open { display: flex; }
       header nav a {
         margin-left: 0;
         padding: 10px 0;
-        border-top: 1px solid rgba(255,255,255,0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
       }
       header nav a:first-child { border-top: none; }
     }
@@ -99,78 +112,105 @@
     }
 
     .card {
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
       padding: 32px;
     }
 
-    .card h2 { font-size: 1.1rem; margin-bottom: 8px; color: #1a3a5c; }
-    .card p.subtitle { font-size: 0.88rem; color: #666; margin-bottom: 24px; }
+    .card h2 {
+      font-family: "Playfair Display", Georgia, serif;
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #f1f5f9;
+    }
+    .card p.subtitle { font-size: 0.9rem; color: #94a3b8; margin-bottom: 24px; line-height: 1.6; }
+    .card p.subtitle a { color: var(--ias-gold); text-decoration: none; }
+    .card p.subtitle a:hover { text-decoration: underline; }
 
     textarea {
       width: 100%;
       height: 220px;
-      border: 1px solid #cdd5df;
-      border-radius: 6px;
-      padding: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 14px;
       font-size: 0.9rem;
       resize: vertical;
       line-height: 1.5;
-      transition: border-color 0.15s;
+      transition: border-color 0.2s ease;
     }
-    textarea:focus { outline: none; border-color: #2c5f8a; }
+    textarea::placeholder { color: #64748b; }
+    textarea:focus { outline: none; border-color: var(--ias-gold); }
 
     .char-count {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
       font-size: 0.78rem;
-      color: #999;
+      color: #64748b;
       text-align: right;
       margin-top: 6px;
     }
-    .char-count.over { color: #c0392b; }
+    .char-count.over { color: #f3a5a5; }
 
     button#send {
       margin-top: 20px;
-      background: #1a3a5c;
-      color: #fff;
+      background: linear-gradient(120deg, var(--ias-gold-soft) 0%, var(--ias-gold) 60%, var(--ias-gold-deep) 100%);
+      color: #1a1203;
       border: none;
-      border-radius: 6px;
-      padding: 11px 28px;
+      border-radius: 9999px;
+      padding: 11px 32px;
       font-size: 0.95rem;
       font-weight: 700;
       cursor: pointer;
-      transition: background 0.15s;
+      box-shadow: 0 10px 24px -10px rgba(231, 196, 126, 0.45);
+      transition: transform 0.3s var(--ias-ease-out-expo), box-shadow 0.3s ease;
     }
-    button#send:hover:not(:disabled) { background: #2c5f8a; }
-    button#send:disabled { opacity: 0.55; cursor: not-allowed; }
+    button#send:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 14px 28px -10px rgba(231, 196, 126, 0.55); }
+    button#send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 
     #status {
       margin-top: 18px;
       font-size: 0.88rem;
       min-height: 20px;
     }
-    #status.success { color: #1a7a3a; }
-    #status.error   { color: #c0392b; }
+    #status.success { color: var(--ias-mint); }
+    #status.error   { color: #f3a5a5; }
 
     .submissions {
       margin-top: 32px;
-      border-top: 1px solid #eee;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
       padding-top: 24px;
     }
-    .submissions h3 { font-size: 0.95rem; color: #444; margin-bottom: 12px; }
+    .submissions h3 {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 12px;
+    }
     .submission-item {
-      background: #f8fafc;
-      border: 1px solid #e4e9f0;
-      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 8px;
       padding: 10px 14px;
       margin-bottom: 8px;
       font-size: 0.85rem;
-      color: #333;
+      color: #cbd5e1;
     }
-    .submission-item .meta { font-size: 0.75rem; color: #999; margin-top: 4px; }
+    .submission-item .meta {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
+
+<div class="ias-aurora" aria-hidden="true">
+  <div class="ias-orb" style="width: 32rem; height: 32rem; top: -10rem; left: -8rem; background: var(--ias-gold-deep);"></div>
+  <div class="ias-orb" style="width: 28rem; height: 28rem; top: 20rem; right: -10rem; background: var(--ias-mint-deep); animation-delay: -12s;"></div>
+</div>
 
 <header>
   <h3>Investment News Analysis AI</h3>
@@ -184,7 +224,7 @@
 </header>
 
 <main>
-  <div class="card">
+  <div class="card ias-glass ias-animate-fly-in">
     <h2>Submit a News Snippet</h2>
     <p class="subtitle">
       Paste a snippet from a news article below. Snippets submitted today will be
