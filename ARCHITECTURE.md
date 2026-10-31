@@ -111,6 +111,35 @@ flowchart LR
     search_results -- read by --> N7
 ```
 
+### State item types and schemas
+
+`AgentState` is a `TypedDict` (`lambda/state.py`) used as the `StateGraph` schema. A `TypedDict` is a static type hint only. LangGraph does not validate values at runtime, and the state has no reducers (no `Annotated[..., operator.add]`), so every key is last-write-wins. Nodes return `{**state, ...}`, so appends such as `search_results` are done manually by each node. No node is restricted to the keys it declares.
+
+| Key | Declared type | Fixed schema? | Actual shape and who enforces it |
+|---|---|---|---|
+| `snippets` | `list[str]` | **No.** Free text. | Each item is the raw text of one S3 object, stripped. User-submitted snippets are validated only by the server's `SnippetRequest` (non-empty, max length). Newsletter snippets follow a de facto template from `_format_snippet`: `Source:`, `Subject:`, `Received:` lines, a blank line, then the body. Downstream nodes only join them with `---`, so neither format is parsed. |
+| `queries` | `list[str]` | **No.** | The LLM's output split on lines, with leading numbering stripped. The prompt asks for 6-12 queries, but the count and content are not checked. |
+| `search_results` | `list[dict]` | **De facto only**, via convention. The dict keys are not declared anywhere. | Web results are built in `web_search.py` and newsletter results in `email_newsletter_search._as_search_result`. Both produce `{query: str, content: str, url: str, published_date: str}`. See the field notes below. |
+| `search_attempt` | `int` | Yes (a primitive). | 0 or more. Incremented by `web_search`, reset to 0 by `search_evaluator` on provider fall-through. Routing treats `>= 2` as exhausted. |
+| `search_provider_index` | `int` | Yes (a primitive). | Index into the provider list. Only `search_evaluator` advances it. It is never bounds-checked beyond that node's `provider_index + 1 < len(providers)` guard. |
+| `search_sufficient` | `bool` | Yes (a primitive). | Set by `search_evaluator` and read only by `route_after_evaluation`. |
+| `report` | `str` | **No.** Markdown prose. | Structure is requested by the `market_analyst.j2` prompt (seven numbered `##` sections). It is not validated. `market_data_search` appends raw HTML `<span class="ina-market-data">` blocks into it. `report_verifier` regex-matches headings and fails open if they are missing. |
+
+**`search_results` field notes**
+
+- `url`: an `http(s)` URL for web results, or `mailto:<sender>#<ISO timestamp>` for newsletters. The `mailto:` prefix is how nodes tell the two apart (`_is_newsletter_result`).
+- `published_date`: a string in one of three forms: ISO 8601 (web results with a date, and newsletters), RFC 2822 (some providers), or an empty string when unknown. `parse_source_date` handles all three. Unknown dates are kept and flagged, not dropped.
+- `content`: free text, either a provider's article extract or the newsletter body.
+- `query`: the originating search query, or `Email newsletter: <subject>` for newsletters.
+- Results are read with a mix of `r["url"]`, `r["query"]`, `r["content"]` (assumed present) and `r.get("published_date", "")`, so a missing key would raise a `KeyError` in some places and be tolerated in others.
+
+**Schemas that do exist at the edges.** There are typed objects around the graph, but none of them are the state itself:
+
+- `EmailMessage` dataclass (`sender`, `subject`, `received_at`, `body`) in `email_providers/base.py`.
+- `SnippetRequest` Pydantic model on the server's `POST /snippets`.
+- `WebSearchProvider.search` contract, documented as `{"results": [{url, content, published_date}]}` or `{"error": Exception}`, in `search_providers/base.py` (docstring only, not enforced).
+- The `{anchor, symbol, commentary}` JSON the Market Data Search LLM must return, filtered by `_extract_insertions` (checks the keys exist, not their types).
+
 ### Shared context for all LLM nodes
 
 - **System prompt** (`lambda/prompts/system.j2`): rendered once with no variables. It sets the team role, the asset classes in scope, and a "fully automated, never ask for clarification" instruction. It is the `SystemMessage` for every LLM call.
