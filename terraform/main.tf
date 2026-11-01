@@ -297,8 +297,8 @@ resource "aws_lambda_function" "agent" {
       TAVILY_SEARCH_WORKERS  = var.tavily_search_workers
       DDGS_MAX_RESULTS       = var.ddgs_max_results
 
-      EVALUATOR_MIN_RESULTS = var.evaluator_min_results
-      EVALUATOR_MIN_DOMAINS = var.evaluator_min_domains
+      SEARCH_EVALUATOR_MIN_RESULTS = var.evaluator_min_results
+      SEARCH_EVALUATOR_MIN_DOMAINS = var.evaluator_min_domains
 
       MARKET_DATA_MAX_TOOL_CALLS = var.market_data_max_tool_calls
     }

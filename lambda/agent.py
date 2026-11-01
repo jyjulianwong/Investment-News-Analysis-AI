@@ -251,8 +251,8 @@ def _build_graph(
         build_web_search_provider(name, **provider_kwargs[name]) for name in provider_priority
     ]
     search_workers = int(os.environ.get("TAVILY_SEARCH_WORKERS", "5"))
-    min_results = int(os.environ.get("EVALUATOR_MIN_RESULTS", "5"))
-    min_domains = int(os.environ.get("EVALUATOR_MIN_DOMAINS", "3"))
+    search_evaluator_min_results = int(os.environ.get("SEARCH_EVALUATOR_MIN_RESULTS", "5"))
+    search_evaluator_min_domains = int(os.environ.get("SEARCH_EVALUATOR_MIN_DOMAINS", "3"))
     report_evaluator_max_retries = int(os.environ.get("REPORT_EVALUATOR_MAX_RETRIES", "2"))
 
     graph = StateGraph(AgentState)
@@ -267,7 +267,9 @@ def _build_graph(
     graph.add_node("web_search", build_web_search_node(search_providers, search_workers))
     graph.add_node(
         "search_evaluator",
-        build_search_evaluator_node(min_results, min_domains, search_providers),
+        build_search_evaluator_node(
+            search_evaluator_min_results, search_evaluator_min_domains, search_providers
+        ),
     )
     graph.add_node("market_analyst", build_market_analyst_node(main_llm, system_prompt))
     graph.add_node("market_data_search", build_market_data_search_node(tool_llm, system_prompt))

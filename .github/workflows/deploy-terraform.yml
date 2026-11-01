@@ -81,8 +81,8 @@ jobs:
             -var="tavily_include_domains=${{ vars.TAVILY_INCLUDE_DOMAINS || 'reuters.com,apnews.com,cnbc.com,marketwatch.com,investing.com,tradingeconomics.com,federalreserve.gov,bis.org,imf.org,finance.yahoo.com,theguardian.com' }}" \
             -var="tavily_search_workers=${{ vars.TAVILY_SEARCH_WORKERS || '5' }}" \
             -var="ddgs_max_results=${{ vars.DDGS_MAX_RESULTS || '10' }}" \
-            -var="evaluator_min_results=${{ vars.EVALUATOR_MIN_RESULTS || '5' }}" \
-            -var="evaluator_min_domains=${{ vars.EVALUATOR_MIN_DOMAINS || '3' }}" \
+            -var="evaluator_min_results=${{ vars.SEARCH_EVALUATOR_MIN_RESULTS || '5' }}" \
+            -var="evaluator_min_domains=${{ vars.SEARCH_EVALUATOR_MIN_DOMAINS || '3' }}" \
             -var="market_data_max_tool_calls=${{ vars.MARKET_DATA_MAX_TOOL_CALLS || '8' }}" \
             -no-color \
             -out=tfplan
@@ -195,8 +195,8 @@ jobs:
             -var="tavily_include_domains=${{ vars.TAVILY_INCLUDE_DOMAINS || 'reuters.com,apnews.com,cnbc.com,marketwatch.com,investing.com,tradingeconomics.com,federalreserve.gov,bis.org,imf.org,finance.yahoo.com,theguardian.com' }}" \
             -var="tavily_search_workers=${{ vars.TAVILY_SEARCH_WORKERS || '5' }}" \
             -var="ddgs_max_results=${{ vars.DDGS_MAX_RESULTS || '10' }}" \
-            -var="evaluator_min_results=${{ vars.EVALUATOR_MIN_RESULTS || '5' }}" \
-            -var="evaluator_min_domains=${{ vars.EVALUATOR_MIN_DOMAINS || '3' }}" \
+            -var="evaluator_min_results=${{ vars.SEARCH_EVALUATOR_MIN_RESULTS || '5' }}" \
+            -var="evaluator_min_domains=${{ vars.SEARCH_EVALUATOR_MIN_DOMAINS || '3' }}" \
             -var="market_data_max_tool_calls=${{ vars.MARKET_DATA_MAX_TOOL_CALLS || '8' }}" \
             -auto-approve \
             -no-color
