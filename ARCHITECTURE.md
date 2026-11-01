@@ -4,112 +4,185 @@
 
 The Lambda runs an 8-node LangGraph pipeline (`_build_graph` in `lambda/agent.py`). Only 3 nodes call an LLM, and only 1 of those has tools; the rest are deterministic Python.
 
-Each box below shows the node's **objective**, the **state keys it reads** (`in`), the **state keys it writes** (`out`), and its **tools**. Blue = LLM node, grey = deterministic node. Nodes with a tool-calling LLM are noted explicitly.
+How to read the diagrams below: the overview shows the order of the nodes; each node then gets its own small diagram showing what it **reads** from the central state, what it **writes** back, the **prompt data** injected (LLM nodes), and the **tools / external calls** it makes.
+
+**Legend**
+
+```mermaid
+flowchart LR
+    S[/"state key"/]:::state
+    P[/"prompt data"/]:::prompt
+    N(["LLM node"]):::llm
+    D(["deterministic node"]):::det
+    T{{"tool / external call"}}:::tool
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef prompt fill:#fef9c3,stroke:#ca8a04,color:#111;
+    classDef llm fill:#dbeafe,stroke:#2563eb,color:#111;
+    classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
+    classDef tool fill:#ffedd5,stroke:#ea580c,color:#111;
+```
+
+### Pipeline overview
 
 ```mermaid
 flowchart TD
-    START([handler: initial state<br/>all keys empty / 0 / False])
-
-    N0["<b>0. email_newsletter_search</b> · no LLM<br/>
-    <b>Objective:</b> fetch recent newsletters; save as snippets and as citable sources<br/>
-    <b>State in:</b> search_results<br/>
-    <b>State out:</b> search_results (+ mailto: results)<br/>
-    <b>Tools:</b> none (EmailProvider IMAP fetch, S3 put_object)<br/>
-    <b>Side effect:</b> uploads snippets to sources/DATE/"]
-
-    N1["<b>1. news_snippet_getter</b> · no LLM<br/>
-    <b>Objective:</b> load all of today's snippets from S3 (single source of truth)<br/>
-    <b>State in:</b> none<br/>
-    <b>State out:</b> snippets (overwritten)<br/>
-    <b>Tools:</b> none (S3 list + get)"]
-
-    N2["<b>2. query_generation</b> · LLM, no tools<br/>
-    <b>Objective:</b> turn snippets into 6-12 web search queries<br/>
-    <b>Prompt data:</b> today, snippets_text<br/>
-    <b>State in:</b> snippets<br/>
-    <b>State out:</b> queries<br/>
-    <b>Tools:</b> none"]
-
-    N3["<b>3. web_search</b> · no LLM<br/>
-    <b>Objective:</b> run all queries on the current provider; filter stale and future results<br/>
-    <b>State in:</b> queries, search_provider_index, search_attempt, search_results<br/>
-    <b>State out:</b> search_results (appended), search_attempt (+1)<br/>
-    <b>Tools:</b> none (WebSearchProvider.search in a thread pool;<br/>attempt 0 = 1-day window, later = 7-day)"]
-
-    N4{"<b>4. search_evaluator</b> · no LLM<br/>
-    <b>Objective:</b> judge result quantity and domain diversity; advance provider if exhausted<br/>
-    <b>State in:</b> search_results, search_provider_index, search_attempt<br/>
-    <b>State out:</b> search_sufficient, search_provider_index, search_attempt<br/>
-    <b>Tools:</b> none (ignores mailto: results)"}
-
-    N5["<b>5. market_analyst</b> · LLM, no tools<br/>
-    <b>Objective:</b> write the cited Markdown report<br/>
-    <b>Prompt data:</b> today, snippets_text, context_text<br/>(each result: query, URL, age label via _age_label, content)<br/>
-    <b>State in:</b> snippets, search_results<br/>
-    <b>State out:</b> report<br/>
-    <b>Tools:</b> none"]
-
-    N6["<b>6. market_data_search</b> · LLM + tools<br/>
-    <b>Objective:</b> add verified price and technical evidence next to asset claims<br/>
-    <b>Prompt data:</b> today, report_md<br/>
-    <b>State in:</b> report<br/>
-    <b>State out:</b> report (evidence spans inserted at anchors)<br/>
-    <b>Tools:</b> get_market_data(symbol)<br/>(yfinance + stockstats, up to MARKET_DATA_MAX_TOOL_CALLS loops)<br/>
-    <b>Fails open:</b> bad JSON / anchor / symbol leaves report unchanged"]
-
-    N7["<b>7. report_verifier</b> · no LLM<br/>
-    <b>Objective:</b> deterministic backstop on citations, dates and priced-in checks<br/>
-    <b>State in:</b> report, search_results<br/>
-    <b>State out:</b> report (repaired / flagged)<br/>
-    <b>Tools:</b> none"]
-
-    END_NODE([END: handler renders PDF via WeasyPrint<br/>and uploads md + pdf to reports bucket])
+    START(["handler: initial state, all keys empty"]):::edge
+    N0(["0. email_newsletter_search"]):::det
+    N1(["1. news_snippet_getter"]):::det
+    N2(["2. query_generation"]):::llm
+    N3(["3. web_search"]):::det
+    N4{"4. search_evaluator"}:::det
+    N5(["5. market_analyst"]):::llm
+    N6(["6. market_data_search"]):::llm
+    N7(["7. report_verifier"]):::det
+    FIN(["handler: render PDF, upload md + pdf to S3"]):::edge
 
     START --> N0 --> N1 --> N2 --> N3 --> N4
-    N4 -- "insufficient and attempt less than 2<br/>(retry wide pass, or next provider)" --> N3
-    N4 -- "sufficient, or attempt at least 2" --> N5
-    N5 --> N6 --> N7 --> END_NODE
+    N4 -->|"insufficient and attempt < 2: retry"| N3
+    N4 -->|"sufficient, or attempt >= 2"| N5
+    N5 --> N6 --> N7 --> FIN
 
     classDef llm fill:#dbeafe,stroke:#2563eb,color:#111;
     classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
     classDef edge fill:#fff,stroke:#111,color:#111;
-    class N2,N5,N6 llm;
-    class N0,N1,N3,N4,N7 det;
-    class START,END_NODE edge;
 ```
 
-### Central state (`lambda/state.py`)
+### Node 0: email_newsletter_search (no LLM)
+
+Objective: fetch recent newsletters; save them as snippets and as citable sources.
 
 ```mermaid
 flowchart LR
-    subgraph State["AgentState"]
-        snippets["snippets<br/>list of str"]
-        queries["queries<br/>list of str"]
-        search_results["search_results<br/>list of dict<br/>query, content, url, published_date"]
-        search_attempt["search_attempt<br/>int"]
-        search_provider_index["search_provider_index<br/>int"]
-        search_sufficient["search_sufficient<br/>bool"]
-        report["report<br/>str (Markdown)"]
-    end
-
-    N0["0 email_newsletter_search"] -- writes --> search_results
-    N1["1 news_snippet_getter"] -- writes --> snippets
-    snippets -- read by --> N2["2 query_generation"]
-    N2 -- writes --> queries
-    queries -- read by --> N3["3 web_search"]
-    N3 -- writes --> search_results
-    N3 -- writes --> search_attempt
-    search_results -- read by --> N4["4 search_evaluator"]
-    N4 -- writes --> search_sufficient
-    N4 -- writes --> search_provider_index
-    N4 -- writes --> search_attempt
-    snippets -- read by --> N5["5 market_analyst"]
-    search_results -- read by --> N5
-    N5 -- writes --> report
-    report -- read and rewritten by --> N6["6 market_data_search"]
-    report -- read and rewritten by --> N7["7 report_verifier"]
-    search_results -- read by --> N7
+    R[/"search_results"/]:::state -->|reads| N(["email_newsletter_search"]):::det
+    N -->|"writes (appends mailto: results)"| W[/"search_results"/]:::state
+    N -.-> T1{{"EmailProvider.fetch_latest_from (IMAP)"}}:::tool
+    N -.-> T2{{"S3 put_object to sources/DATE/"}}:::tool
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
+    classDef tool fill:#ffedd5,stroke:#ea580c,color:#111;
 ```
+
+### Node 1: news_snippet_getter (no LLM)
+
+Objective: load all of today's snippets from S3, the single source of truth.
+
+```mermaid
+flowchart LR
+    N(["news_snippet_getter"]):::det -->|"writes (overwrites)"| W[/"snippets"/]:::state
+    N -.-> T{{"S3 list_objects_v2 + get_object"}}:::tool
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
+    classDef tool fill:#ffedd5,stroke:#ea580c,color:#111;
+```
+
+### Node 2: query_generation (LLM, no tools)
+
+Objective: turn snippets into 6-12 web search queries.
+
+```mermaid
+flowchart LR
+    R[/"snippets"/]:::state -->|reads| N(["query_generation"]):::llm
+    P[/"prompt: today, snippets_text"/]:::prompt -->|injected| N
+    N -->|writes| W[/"queries"/]:::state
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef prompt fill:#fef9c3,stroke:#ca8a04,color:#111;
+    classDef llm fill:#dbeafe,stroke:#2563eb,color:#111;
+```
+
+### Node 3: web_search (no LLM)
+
+Objective: run every query on the current provider; drop stale and future-dated results. Attempt 0 uses a 1-day window; later attempts use 7 days.
+
+```mermaid
+flowchart LR
+    R1[/"queries"/]:::state -->|reads| N(["web_search"]):::det
+    R2[/"search_provider_index"/]:::state -->|reads| N
+    R3[/"search_attempt"/]:::state -->|reads| N
+    R4[/"search_results"/]:::state -->|reads| N
+    N -->|"writes (appends)"| W1[/"search_results"/]:::state
+    N -->|"writes (+1)"| W2[/"search_attempt"/]:::state
+    N -.-> T{{"WebSearchProvider.search, one thread per query"}}:::tool
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
+    classDef tool fill:#ffedd5,stroke:#ea580c,color:#111;
+```
+
+### Node 4: search_evaluator (no LLM)
+
+Objective: judge result count and domain diversity (ignoring `mailto:` results); advance to the next provider when the current one is exhausted. Its output drives the conditional edge back to `web_search` or on to `market_analyst`.
+
+```mermaid
+flowchart LR
+    R1[/"search_results"/]:::state -->|reads| N{"search_evaluator"}:::det
+    R2[/"search_provider_index"/]:::state -->|reads| N
+    R3[/"search_attempt"/]:::state -->|reads| N
+    N -->|writes| W1[/"search_sufficient"/]:::state
+    N -->|"writes (advance on exhaustion)"| W2[/"search_provider_index"/]:::state
+    N -->|"writes (reset to 0 on fall-through)"| W3[/"search_attempt"/]:::state
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
+```
+
+### Node 5: market_analyst (LLM, no tools)
+
+Objective: write the cited Markdown report. Each search result is rendered into `context_text` with its URL and an age label computed in code (`_age_label`).
+
+```mermaid
+flowchart LR
+    R1[/"snippets"/]:::state -->|reads| N(["market_analyst"]):::llm
+    R2[/"search_results"/]:::state -->|reads| N
+    P[/"prompt: today, snippets_text, context_text"/]:::prompt -->|injected| N
+    N -->|writes| W[/"report"/]:::state
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef prompt fill:#fef9c3,stroke:#ca8a04,color:#111;
+    classDef llm fill:#dbeafe,stroke:#2563eb,color:#111;
+```
+
+### Node 6: market_data_search (LLM with tools)
+
+Objective: add verified price and technical evidence next to asset claims. The model supplies only `{anchor, symbol, commentary}`; the price and indicator facts are inserted by code. It fails open: bad JSON, an unmatched anchor or an unfetched symbol leaves the report unchanged.
+
+```mermaid
+flowchart LR
+    R[/"report"/]:::state -->|reads| N(["market_data_search"]):::llm
+    P[/"prompt: today, report_md"/]:::prompt -->|injected| N
+    N <-->|"tool loop, up to MARKET_DATA_MAX_TOOL_CALLS"| T{{"get_market_data(symbol)<br/>yfinance + stockstats"}}:::tool
+    N -->|"writes (evidence spans inserted)"| W[/"report"/]:::state
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef prompt fill:#fef9c3,stroke:#ca8a04,color:#111;
+    classDef llm fill:#dbeafe,stroke:#2563eb,color:#111;
+    classDef tool fill:#ffedd5,stroke:#ea580c,color:#111;
+```
+
+### Node 7: report_verifier (no LLM)
+
+Objective: deterministic backstop. Unwraps backticked links, strips or repairs citations whose URL was not returned by search, corrects citation dates and STALE flags, and flags unquantified priced-in bullets.
+
+```mermaid
+flowchart LR
+    R1[/"report"/]:::state -->|reads| N(["report_verifier"]):::det
+    R2[/"search_results"/]:::state -->|"reads (valid URLs, dates)"| N
+    N -->|"writes (repaired / flagged)"| W[/"report"/]:::state
+    classDef state fill:#dcfce7,stroke:#16a34a,color:#111;
+    classDef det fill:#f3f4f6,stroke:#6b7280,color:#111;
+```
+
+### Central state: who reads and writes each key (`lambda/state.py`)
+
+R = reads, W = writes (including append / overwrite). Empty = not touched.
+
+| Node | snippets | queries | search_results | search_attempt | search_provider_index | search_sufficient | report |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| 0. email_newsletter_search | | | R, W | | | | |
+| 1. news_snippet_getter | W | | | | | | |
+| 2. query_generation | R | W | | | | | |
+| 3. web_search | | R | R, W | R, W | R | | |
+| 4. search_evaluator | | | R | R, W | R, W | W | |
+| 5. market_analyst | R | | R | | | | W |
+| 6. market_data_search | | | | | | | R, W |
+| 7. report_verifier | | | R | | | | R, W |
+
+`search_sufficient` is also read by the router `route_after_evaluation`, together with `search_attempt`.
 
 ### State item types and schemas
 
