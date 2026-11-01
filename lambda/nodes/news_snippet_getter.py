@@ -23,6 +23,6 @@ def build_news_snippet_getter_node(s3_client, sources_bucket: str):
             f"[agent] News snippet getter: found {len(snippets)} snippet(s) "
             f"in s3://{sources_bucket}/{prefix}"
         )
-        return {**state, "snippets": snippets}
+        return {"snippets": snippets}
 
     return news_snippet_getter_node

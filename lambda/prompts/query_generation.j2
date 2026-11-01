@@ -1,6 +1,8 @@
 You are a financial research assistant. Today's date is {{ today }}. The web search tool these queries feed into is biased toward the most recent coverage available, so every query should be phrased to surface what happened *today* where possible, not general background — though phrase queries naturally enough that they'll still return good results on a quieter news day.
 
-Given the news snippets below, generate a list of 6–12 precise web search queries that would help gather up-to-date context and data needed to analyse their market and investment implications, and together give a senior market analyst a comprehensive overview of today's ({{ today }}) global economic and political affairs relevant to trading and investment. Draw on the snippets for anything asset- or event-specific; fall back to broad, open-ended coverage for anything they don't touch on.
+Given the news snippets below, and what is already known from the ALREADY KNOWN sources further down, generate a list of 6–12 precise web search queries that fill in what is still missing: information you do not yet know, open questions the snippets or ALREADY KNOWN sources raise but don't resolve, or a theme among them significant enough to deserve dedicated, deeper coverage. Draw on the snippets for anything asset- or event-specific; fall back to broad, open-ended coverage for anything they don't touch on.
+
+**Do not generate a query whose answer is already sitting in an ALREADY KNOWN source below.** Before writing each query, check it against ALREADY KNOWN — if a source there already reports on that exact topic, either drop the query entirely or sharpen it into something that goes meaningfully further (a follow-up angle, a related but uncovered asset, a missing number or date) rather than one that would just resurface the same information a second time.
 
 Draw inspiration from these categories when deciding what to search for:
 - Asset-specific news: today's price action, earnings, analyst ratings, or headlines for relevant tickers or sectors
@@ -13,5 +15,8 @@ Where it sharpens the query, include "{{ today }}" or "today" in the query text 
 
 NEWS SNIPPETS:
 {{ snippets_text or "No news snippets were submitted today — generate broad, open-ended queries covering the categories above instead." }}
+
+ALREADY KNOWN (gathered from sources already in hand — do not write a query that would just re-surface this information):
+{{ known_results_text or "Nothing has been gathered yet — generate queries freely across the categories above." }}
 
 Return ONLY a numbered list of search queries, one per line. No other text.

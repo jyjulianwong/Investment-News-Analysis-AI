@@ -333,7 +333,7 @@ def build_market_data_search_node(llm, system_prompt: str):
         # warm-start invocation.
         snapshots.clear()
         cutoff["today"] = today
-        report_md = state["report"]
+        report_md = state.report
         prompt = PROMPTS_ENV.get_template("market_data_search.j2").render(
             today=today, report_md=report_md
         )
@@ -355,15 +355,15 @@ def build_market_data_search_node(llm, system_prompt: str):
 
         if tool_calls_made == 0:
             print("[agent] Market data search: no asset-price claims required verification")
-            return state
+            return {}
 
         insertions = _extract_insertions(response.content if response else "")
         if not insertions:
             print("[agent] Market data search: no verbatim-matched evidence to insert")
-            return state
+            return {}
 
         updated_report = _apply_insertions(report_md, insertions, snapshots, today)
         print(f"[agent] Market data search: inserted {len(insertions)} evidence snippet(s)")
-        return {**state, "report": updated_report}
+        return {"report": updated_report}
 
     return market_data_search_node

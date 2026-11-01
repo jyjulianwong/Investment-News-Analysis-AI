@@ -13,7 +13,7 @@ PROMPTS_ENV = jinja2.Environment(
 
 # Age past which a source is treated as STALE — both in the WEB CONTEXT
 # annotation the analyst reads (nodes/market_analyst.py) and in the visible
-# citation flag added to the rendered report (nodes/report_verifier.py).
+# citation flag added to the rendered report (nodes/report_validator.py).
 # Shared here so the two never drift apart.
 STALE_AGE_DAYS = 7
 

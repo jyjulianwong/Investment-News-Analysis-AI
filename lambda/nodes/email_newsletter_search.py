@@ -3,7 +3,7 @@ from datetime import date
 
 from email_providers.base import EmailMessage, EmailProvider
 from helpers import STALE_AGE_DAYS, today_utc
-from state import AgentState
+from state import AgentState, SearchResult
 
 
 def _format_snippet(message: EmailMessage) -> str:
@@ -16,9 +16,9 @@ def _format_snippet(message: EmailMessage) -> str:
     )
 
 
-def _as_search_result(message: EmailMessage) -> dict:
+def _as_search_result(message: EmailMessage) -> SearchResult:
     """Shape a fetched newsletter exactly like a Tavily search result, so
-    market_analyst.py's WEB CONTEXT rendering and report_verifier.py's
+    market_analyst.py's WEB CONTEXT rendering and report_validator.py's
     citation checks treat it identically to any other source — no
     special-casing needed downstream. A `mailto:` URI stands in for a URL,
     since the message has no public web address, but it's still a distinct,
@@ -28,19 +28,19 @@ def _as_search_result(message: EmailMessage) -> dict:
     The received timestamp is appended as a URL fragment: a sender configured
     to fetch more than one message (see `EMAIL_NEWSLETTER_SENDERS` in
     agent.py) would otherwise produce several search results sharing one
-    identical `mailto:` URL, which breaks report_verifier.py's
+    identical `mailto:` URL, which breaks report_validator.py's
     `published_by_url` lookup — it's keyed by URL, so distinct messages need
     distinct URLs to each get their own correct citation date. `mailto:`
     results are excluded from search_evaluator.py's sufficiency/diversity
     check entirely (identified by URL scheme), so the fragment only matters
     for citation dating, not for source-diversity counting.
     """
-    return {
-        "query": f"Email newsletter: {message.subject}",
-        "content": message.body.strip(),
-        "url": f"mailto:{message.sender}#{message.received_at.isoformat()}",
-        "published_date": message.received_at.isoformat(),
-    }
+    return SearchResult(
+        query=f"Email newsletter: {message.subject}",
+        content=message.body.strip(),
+        url=f"mailto:{message.sender}#{message.received_at.isoformat()}",
+        published_date=message.received_at.isoformat(),
+    )
 
 
 def build_email_newsletter_search_node(
@@ -123,7 +123,7 @@ def build_email_newsletter_search_node(
                 f"to s3://{sources_bucket}/sources/{today}/"
             )
         if not newsletter_results:
-            return state
-        return {**state, "search_results": state["search_results"] + newsletter_results}
+            return {}
+        return {"search_results": state.search_results + newsletter_results}
 
     return email_newsletter_search_node

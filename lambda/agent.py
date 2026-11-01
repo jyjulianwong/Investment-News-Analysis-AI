@@ -9,7 +9,8 @@ from nodes.market_analyst import build_market_analyst_node
 from nodes.market_data_search import build_market_data_search_node
 from nodes.news_snippet_getter import build_news_snippet_getter_node
 from nodes.query_generation import build_query_generation_node
-from nodes.report_verifier import report_verifier_node
+from nodes.report_evaluator import build_report_evaluator_node, route_after_report_evaluation
+from nodes.report_validator import report_validator_node
 from nodes.search_evaluator import build_search_evaluator_node, route_after_evaluation
 from nodes.web_search import build_web_search_node
 from state import AgentState
@@ -252,6 +253,7 @@ def _build_graph(
     search_workers = int(os.environ.get("TAVILY_SEARCH_WORKERS", "5"))
     min_results = int(os.environ.get("EVALUATOR_MIN_RESULTS", "5"))
     min_domains = int(os.environ.get("EVALUATOR_MIN_DOMAINS", "3"))
+    report_evaluator_max_retries = int(os.environ.get("REPORT_EVALUATOR_MAX_RETRIES", "2"))
 
     graph = StateGraph(AgentState)
     graph.add_node(
@@ -269,7 +271,11 @@ def _build_graph(
     )
     graph.add_node("market_analyst", build_market_analyst_node(main_llm, system_prompt))
     graph.add_node("market_data_search", build_market_data_search_node(tool_llm, system_prompt))
-    graph.add_node("report_verifier", report_verifier_node)
+    graph.add_node(
+        "report_evaluator",
+        build_report_evaluator_node(main_llm, system_prompt, report_evaluator_max_retries),
+    )
+    graph.add_node("report_validator", report_validator_node)
 
     graph.set_entry_point("email_newsletter_search")
     graph.add_edge("email_newsletter_search", "news_snippet_getter")
@@ -282,8 +288,13 @@ def _build_graph(
         {"market_analyst": "market_analyst", "web_search": "web_search"},
     )
     graph.add_edge("market_analyst", "market_data_search")
-    graph.add_edge("market_data_search", "report_verifier")
-    graph.add_edge("report_verifier", END)
+    graph.add_edge("market_data_search", "report_evaluator")
+    graph.add_conditional_edges(
+        "report_evaluator",
+        route_after_report_evaluation,
+        {"market_analyst": "market_analyst", "report_validator": "report_validator"},
+    )
+    graph.add_edge("report_validator", END)
 
     return graph.compile()
 
@@ -324,6 +335,9 @@ def handler(event, context):
         "search_provider_index": 0,
         "search_sufficient": False,
         "report": "",
+        "report_feedback": "",
+        "report_revision": 0,
+        "report_approved": False,
     }
     final_state = _graph.invoke(initial_state)
     md_text = final_state["report"]

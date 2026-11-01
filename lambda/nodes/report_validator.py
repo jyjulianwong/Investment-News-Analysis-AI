@@ -177,7 +177,11 @@ def _flag_unquantified_priced_in_checks(report_md: str) -> str:
         s
         for s in (
             _find_section(report_md, p)
-            for p in ("Opportunities", "If I had 6 months, I would long.*", "If I had 6 months, I would short.*")
+            for p in (
+                "Opportunities",
+                "If I had 6 months, I would long.*",
+                "If I had 6 months, I would short.*",
+            )
         )
         if s
     ]
@@ -207,13 +211,11 @@ def _flag_unquantified_priced_in_checks(report_md: str) -> str:
     return result
 
 
-def report_verifier_node(state: AgentState) -> AgentState:
-    valid_urls = {r["url"] for r in state["search_results"] if r.get("url")}
-    published_by_url = {
-        r["url"]: r.get("published_date", "") for r in state["search_results"] if r.get("url")
-    }
-    report_md = _unwrap_backticked_links(state["report"])
+def report_validator_node(state: AgentState) -> AgentState:
+    valid_urls = {r.url for r in state.search_results if r.url}
+    published_by_url = {r.url: r.published_date for r in state.search_results if r.url}
+    report_md = _unwrap_backticked_links(state.report)
     report_md = _verify_citations(report_md, valid_urls)
     report_md = _repair_citation_dates(report_md, published_by_url, today_utc())
     report_md = _flag_unquantified_priced_in_checks(report_md)
-    return {**state, "report": report_md}
+    return {"report": report_md}

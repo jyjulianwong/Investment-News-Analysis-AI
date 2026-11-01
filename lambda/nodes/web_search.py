@@ -3,7 +3,7 @@ from datetime import date
 
 from helpers import parse_source_date, today_utc
 from search_providers.base import WebSearchProvider
-from state import AgentState
+from state import AgentState, SearchResult
 
 
 def _within_days(published_date: str, today: str, max_age_days: int) -> bool:
@@ -33,8 +33,8 @@ def _within_days(published_date: str, today: str, max_age_days: int) -> bool:
 def build_web_search_node(providers: list[WebSearchProvider], search_workers: int):
     def web_search_node(state: AgentState) -> AgentState:
         today = today_utc()
-        provider = providers[state["search_provider_index"]]
-        attempt = state["search_attempt"]
+        provider = providers[state.search_provider_index]
+        attempt = state.search_attempt
         # Same-day coverage can be genuinely thin (early in the day, a quiet
         # news cycle, a narrow query) — pinning every attempt to an exact
         # calendar-day match risks a starved, fact-free report. Start strict
@@ -47,7 +47,7 @@ def build_web_search_node(providers: list[WebSearchProvider], search_workers: in
         future_count = 0
         error_count = 0
         with ThreadPoolExecutor(max_workers=search_workers) as pool:
-            futures = {pool.submit(provider.search, q, time_range): q for q in state["queries"]}
+            futures = {pool.submit(provider.search, q, time_range): q for q in state.queries}
             for future in as_completed(futures):
                 query = futures[future]
                 try:
@@ -67,7 +67,11 @@ def build_web_search_node(providers: list[WebSearchProvider], search_workers: in
                         )
                         continue
                     for r in result.get("results", []):
-                        published_date = r.get("published_date", "")
+                        # Tavily (even on topic="news") can return this key
+                        # as an explicit `None` rather than omitting it or
+                        # using "" — coerce it before SearchResult's schema
+                        # (a plain `str`, not `str | None`) rejects it.
+                        published_date = r.get("published_date") or ""
                         parsed = parse_source_date(published_date)
                         if parsed is not None and (date.fromisoformat(today) - parsed).days < -1:
                             future_count += 1
@@ -76,12 +80,12 @@ def build_web_search_node(providers: list[WebSearchProvider], search_workers: in
                             stale_count += 1
                             continue
                         new_results.append(
-                            {
-                                "query": query,
-                                "content": r.get("content", ""),
-                                "url": r.get("url", ""),
-                                "published_date": published_date,
-                            }
+                            SearchResult(
+                                query=query,
+                                content=r.get("content") or "",
+                                url=r.get("url") or "",
+                                published_date=published_date,
+                            )
                         )
                 except Exception as exc:
                     # Single-query failures should not abort the entire run, but
@@ -102,14 +106,13 @@ def build_web_search_node(providers: list[WebSearchProvider], search_workers: in
         print(
             f"[agent] Web search ({provider.name}): {len(new_results)} result(s) kept"
             + (
-                f", {error_count}/{len(state['queries'])} quer{'y' if error_count == 1 else 'ies'} failed"
+                f", {error_count}/{len(state.queries)} quer{'y' if error_count == 1 else 'ies'} failed"
                 if error_count
                 else ""
             )
         )
         return {
-            **state,
-            "search_results": state["search_results"] + new_results,
+            "search_results": state.search_results + new_results,
             "search_attempt": attempt + 1,
         }
 
