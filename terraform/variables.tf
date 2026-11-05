@@ -193,3 +193,21 @@ variable "market_data_max_tool_calls" {
   type        = string
   default     = "8"
 }
+
+variable "mrd_api_base_url" {
+  description = "Base URL of the Market Regime Detector read-only API (no trailing path), used by the Lambda's data_fetcher step"
+  type        = string
+  default     = "https://6nbosjpuc9.execute-api.eu-west-2.amazonaws.com"
+}
+
+variable "mrd_model_name" {
+  description = "Market Regime Detector model family whose production model's latest prediction is fetched"
+  type        = string
+  default     = "allweather-hmm2naive-us"
+}
+
+variable "mrd_request_timeout_seconds" {
+  description = "Timeout for the data_fetcher call to Market Regime Detector; on failure the step is skipped, not fatal"
+  type        = number
+  default     = 15
+}

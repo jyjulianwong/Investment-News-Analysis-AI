@@ -28,8 +28,8 @@ _JWKS_URL = os.environ.get("OBSIDIAN_JWKS_URL", "https://jwks.jyjwong.com/.well-
 _jwk_client = PyJWKClient(_JWKS_URL)
 
 
-def require_device(authorization: str = Header(...)) -> str:
-    """FastAPI dependency: returns the authenticated device_id, or raises 401."""
+def _verify_bearer(authorization: str) -> str:
+    """Validates a `Bearer <jwt>` header value; returns the device_id or raises 401."""
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ")
@@ -47,3 +47,20 @@ def require_device(authorization: str = Header(...)) -> str:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
 
     return payload["sub"]  # device_id
+
+
+def require_device(authorization: str = Header(...)) -> str:
+    """FastAPI dependency: returns the authenticated device_id, or raises 401."""
+    return _verify_bearer(authorization)
+
+
+def optional_device(authorization: str | None = Header(default=None)) -> str | None:
+    """FastAPI dependency for routes that are public but unlock more for an
+    authenticated device: returns the device_id, or None when no
+    `Authorization` header is sent. A header that *is* sent but invalid still
+    raises 401 — a caller presenting a bad/expired token should be told so
+    rather than silently treated as anonymous.
+    """
+    if authorization is None:
+        return None
+    return _verify_bearer(authorization)

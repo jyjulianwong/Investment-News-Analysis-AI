@@ -18,7 +18,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml .
 RUN uv pip install --system --no-cache -r pyproject.toml
 
-COPY agent.py helpers.py state.py ${LAMBDA_TASK_ROOT}/
+COPY agent.py helpers.py state.py mrd_schema.py ${LAMBDA_TASK_ROOT}/
 COPY nodes/ ${LAMBDA_TASK_ROOT}/nodes/
 COPY email_providers/ ${LAMBDA_TASK_ROOT}/email_providers/
 COPY search_providers/ ${LAMBDA_TASK_ROOT}/search_providers/

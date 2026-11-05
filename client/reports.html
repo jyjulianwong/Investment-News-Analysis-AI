@@ -212,6 +212,32 @@
       color: #e2e8f0;
       background: rgba(10, 15, 31, 0.9);
     }
+
+    .report-links a.locked, .report-links button.locked {
+      opacity: 0.55;
+    }
+    .btn-locked {
+      font-size: 0.8rem;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      font-weight: 600;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.04);
+      color: #94a3b8;
+      border: 1px dashed rgba(255, 255, 255, 0.2);
+    }
+    .btn-locked:hover { border-color: var(--ias-gold); color: var(--ias-gold-soft); }
+    .auth-note { font-size: 0.8rem; color: #94a3b8; margin-top: 18px; line-height: 1.6; }
+
+    .site-disclaimer {
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto 32px;
+      padding: 0 24px;
+      font-size: 0.7rem;
+      line-height: 1.5;
+      color: #64748b;
+    }
   </style>
 </head>
 <body>
@@ -238,6 +264,9 @@
     <p class="subtitle">
       Reports are generated automatically at 10:00 UTC, Monday to Friday.
       Click a date to download the PDF or view the Markdown source.
+      Reports from the last 3 days are open to everyone; older reports are
+      restricted to devices authorized via
+      <a href="https://jyjulianwong.github.io/Obsidian-Server/" target="_blank" rel="noopener">Obsidian</a>.
     </p>
 
     <div id="loading">Loading reports…</div>
@@ -245,19 +274,62 @@
     <div id="empty"  style="display:none">No reports found yet.</div>
     <ul id="reports-list" style="display:none"></ul>
     <nav id="pagination" class="pagination" style="display:none" aria-label="Reports pagination"></nav>
+    <p id="auth-note" class="auth-note" style="display:none"></p>
   </div>
 </main>
 
+<footer class="site-disclaimer">
+  Important information. This website and its reports are provided for general information and educational purposes only. They are generated with the assistance of artificial intelligence and may contain errors, omissions, or out-of-date information. Nothing here is investment, financial, legal, or tax advice, a personal recommendation, or an offer or invitation to buy or sell any investment. The author is not authorised or regulated by the Financial Conduct Authority. Content is not tailored to your circumstances. The value of investments can fall as well as rise, and you may get back less than you invest. Past performance is not a reliable indicator of future results. Do your own research and speak to a suitably qualified, authorised adviser before making investment decisions. Use of this site is at your own risk, and the author accepts no liability for any loss arising from reliance on it.
+</footer>
+
 <script>
-  // Replace with your actual public S3 reports bucket URL after deployment.
-  // Format: https://<bucket-name>.s3.<region>.amazonaws.com
-  const S3_BASE = "https://004246189700-jyjulianwong-ina-news-reports.s3.eu-west-2.amazonaws.com";
+  // Reports live in a private S3 bucket; this API lists them and hands out
+  // short-lived download links. Reports older than 3 days are only served to
+  // devices that can obtain an Obsidian access token (mTLS client cert).
+  const API_BASE = "https://investment-news-analysis-ai.onrender.com";
+  const OBSIDIAN_ISSUER = "https://auth.jyjwong.com";
+
+  // Cached Obsidian token; null when this device has no authorized certificate.
+  let obsidianToken = null;
+  let obsidianTokenExp = 0;
+
+  function jwtExpiryMs(token) {
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return payload.exp * 1000;
+    } catch {
+      return 0;
+    }
+  }
+
+  // Returns a valid token, or null if the device isn't authorized. Never throws:
+  // an unauthorized device is a normal, expected state on this page.
+  async function getObsidianToken() {
+    if (obsidianToken && Date.now() < obsidianTokenExp - 30000) return obsidianToken;
+    try {
+      const resp = await fetch(`${OBSIDIAN_ISSUER}/auth/token`, { method: "POST" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const { access_token } = await resp.json();
+      obsidianToken = access_token;
+      obsidianTokenExp = jwtExpiryMs(access_token);
+    } catch {
+      obsidianToken = null;
+      obsidianTokenExp = 0;
+    }
+    return obsidianToken;
+  }
+
+  async function authHeaders() {
+    const token = await getObsidianToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
 
   const loadingEl    = document.getElementById("loading");
   const errorEl      = document.getElementById("error");
   const emptyEl      = document.getElementById("empty");
   const listEl       = document.getElementById("reports-list");
   const paginationEl = document.getElementById("pagination");
+  const authNoteEl   = document.getElementById("auth-note");
   const navToggle    = document.getElementById("nav-toggle");
   const siteNav      = document.getElementById("site-nav");
 
@@ -273,31 +345,23 @@
 
   async function loadReports() {
     try {
-      // List all objects under reports/ using the S3 REST list API
-      const url = `${S3_BASE}?list-type=2&prefix=reports/&delimiter=/`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`S3 list failed: HTTP ${resp.status}`);
-
-      const text = await resp.text();
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(text, "application/xml");
-
-      // Each day's folder appears as a <CommonPrefixes><Prefix> element
-      const prefixes = Array.from(xml.querySelectorAll("CommonPrefixes > Prefix"))
-        .map(el => el.textContent.trim())   // e.g. "reports/2025-11-01/"
-        .map(p => p.replace(/^reports\/|\/$/g, ""))  // => "2025-11-01"
-        .filter(Boolean)
-        .sort()
-        .reverse(); // newest first
+      const resp = await fetch(`${API_BASE}/reports`, { headers: await authHeaders() });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const body = await resp.json();
 
       loadingEl.style.display = "none";
 
-      if (prefixes.length === 0) {
+      if (body.reports.length === 0) {
         emptyEl.style.display = "";
         return;
       }
 
-      allDays = prefixes;
+      allDays = body.reports; // [{date, locked}], newest first
+      if (allDays.some(r => r.locked)) {
+        authNoteEl.style.display = "";
+        authNoteEl.textContent =
+          "Locked reports are older than 3 days. Open them from a device with an authorized Obsidian certificate.";
+      }
       listEl.style.display = "";
       renderPage(1);
 
@@ -308,6 +372,24 @@
     }
   }
 
+  // Opens a report via a fresh presigned URL. The tab is opened synchronously
+  // (inside the click) and navigated afterwards, so popup blockers allow it
+  // despite the async fetch in between.
+  async function openReport(day, fmt) {
+    const tab = window.open("", "_blank");
+    try {
+      const resp = await fetch(`${API_BASE}/reports/${day}/${fmt}`, { headers: await authHeaders() });
+      if (resp.status === 401) throw new Error("This report is older than 3 days and needs an authorized device.");
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const { url } = await resp.json();
+      if (tab) tab.location.href = url; else window.location.href = url;
+    } catch (err) {
+      if (tab) tab.close();
+      errorEl.style.display = "";
+      errorEl.textContent = `Could not open report: ${err.message}`;
+    }
+  }
+
   function renderPage(page) {
     const totalPages = Math.max(1, Math.ceil(allDays.length / PAGE_SIZE));
     currentPage = Math.min(Math.max(1, page), totalPages);
@@ -315,15 +397,26 @@
     const start = (currentPage - 1) * PAGE_SIZE;
     const pageDays = allDays.slice(start, start + PAGE_SIZE);
 
-    listEl.innerHTML = pageDays.map(day => `
+    const btn = (cls, day, fmt, label, locked) => locked
+      ? `<button type="button" class="btn-locked" data-day="${day}" data-fmt="${fmt}" title="Requires an authorized device">🔒 ${label}</button>`
+      : `<a class="${cls}" href="#" data-day="${day}" data-fmt="${fmt}">${label}</a>`;
+
+    listEl.innerHTML = pageDays.map(r => `
       <li class="report-row">
-        <span class="report-date">${day}</span>
+        <span class="report-date">${r.date}</span>
         <div class="report-links">
-          <a class="btn-pdf" href="${S3_BASE}/reports/${day}/report.pdf" target="_blank" rel="noopener">PDF</a>
-          <a class="btn-md"  href="${S3_BASE}/reports/${day}/report.md"  target="_blank" rel="noopener">Markdown</a>
+          ${btn("btn-pdf", r.date, "pdf", "PDF", r.locked)}
+          ${btn("btn-md", r.date, "md", "Markdown", r.locked)}
         </div>
       </li>
     `).join("");
+
+    listEl.querySelectorAll("[data-day]").forEach(el => {
+      el.addEventListener("click", e => {
+        e.preventDefault();
+        openReport(el.dataset.day, el.dataset.fmt);
+      });
+    });
 
     renderPagination(totalPages);
   }

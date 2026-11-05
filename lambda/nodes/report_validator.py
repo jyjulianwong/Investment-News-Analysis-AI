@@ -161,7 +161,7 @@ def _find_section(report_md: str, heading_pattern: str) -> tuple[int, int] | Non
 
 def _flag_unquantified_priced_in_checks(report_md: str) -> str:
     """Deterministic backstop for Standard #3 (priced-in check): flag any
-    Opportunities or 6-month-pick bullet that doesn't cite a concrete number
+    Opportunities or Bullish/Bearish Case Studies bullet that doesn't cite a concrete number
     (a price level, %, bps, or multiple) and doesn't explicitly say pricing
     data wasn't available.
 
@@ -179,8 +179,8 @@ def _flag_unquantified_priced_in_checks(report_md: str) -> str:
             _find_section(report_md, p)
             for p in (
                 "Opportunities",
-                "If I had 6 months, I would long.*",
-                "If I had 6 months, I would short.*",
+                "Bullish Case Studies.*",
+                "Bearish Case Studies.*",
             )
         )
         if s

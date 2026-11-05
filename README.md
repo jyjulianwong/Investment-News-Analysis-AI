@@ -25,7 +25,7 @@ GitHub Pages Client
                                         │
                                 S3 reports bucket  (reports/YYYY-MM-DD/report.{pdf,md})
                                         │
-                              GitHub Pages Client  ◄─ public S3 links
+                              GitHub Pages Client  ◄─ Render API (presigned links; reports >3 days old need Obsidian)
 ```
 
 ## Repository Layout
@@ -217,6 +217,7 @@ In your Render service dashboard → **Environment**, add:
 | `AWS_SECRET_ACCESS_KEY`        | Render server IAM user secret access key          |
 | `AWS_REGION`                   | `eu-west-2`                                       |
 | `AWS_S3_SOURCES_BUCKET_NAME`   | Output of `terraform output s3_sources_bucket_name` |
+| `AWS_S3_REPORTS_BUCKET_NAME`   | Output of `terraform output s3_reports_bucket_name` — the reports bucket is private; the server lists it and presigns downloads |
 | `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`             |
 | `OBSIDIAN_JWKS_URL`            | e.g. `https://jwks.jyjwong.com/.well-known/jwks.json` — Obsidian's public (non-mTLS) JWKS domain; do NOT point this at a path under `auth.jyjwong.com`, which requires a client certificate this server doesn't have |
 
