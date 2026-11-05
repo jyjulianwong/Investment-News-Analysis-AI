@@ -44,8 +44,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "sources" {
 }
 
 # ---------------------------------------------------------------------------
-# S3 — Reports bucket (private; the Render API lists it and issues presigned
-# URLs, gating reports older than 3 days behind Obsidian authentication)
+# S3 — Reports bucket (public read, UI lists and links to reports here)
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "reports" {
@@ -54,10 +53,10 @@ resource "aws_s3_bucket" "reports" {
 
 resource "aws_s3_bucket_public_access_block" "reports" {
   bucket                  = aws_s3_bucket.reports.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
 }
 
 resource "aws_s3_bucket_ownership_controls" "reports" {
@@ -65,6 +64,27 @@ resource "aws_s3_bucket_ownership_controls" "reports" {
   rule {
     object_ownership = "BucketOwnerPreferred"
   }
+}
+
+resource "aws_s3_bucket_policy" "reports_public_read" {
+  bucket = aws_s3_bucket.reports.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [
+          aws_s3_bucket.reports.arn,
+          "${aws_s3_bucket.reports.arn}/*"
+        ]
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.reports]
 }
 
 resource "aws_s3_bucket_cors_configuration" "reports" {
@@ -334,22 +354,6 @@ data "aws_iam_policy_document" "server" {
       "s3:PutObject",
     ]
     resources = ["${aws_s3_bucket.sources.arn}/sources/*"]
-  }
-
-  # The reports bucket is private; the server lists it and presigns download
-  # URLs, enforcing the Obsidian gate for reports older than 3 days.
-  statement {
-    sid       = "ListReportsBucket"
-    effect    = "Allow"
-    actions   = ["s3:ListBucket"]
-    resources = [aws_s3_bucket.reports.arn]
-  }
-
-  statement {
-    sid       = "ReadReports"
-    effect    = "Allow"
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.reports.arn}/reports/*"]
   }
 }
 

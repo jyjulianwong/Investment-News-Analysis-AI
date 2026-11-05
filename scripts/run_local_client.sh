@@ -16,8 +16,7 @@ mkdir -p "$TMP_DIR"
 sed 's|https://investment-news-analysis-ai.onrender.com|http://localhost:8000|g' \
     "$REPO_ROOT/client/index.html" > "$TMP_DIR/index.html"
 
-sed 's|https://investment-news-analysis-ai.onrender.com|http://localhost:8000|g' \
-    "$REPO_ROOT/client/reports.html" > "$TMP_DIR/reports.html"
+cp "$REPO_ROOT/client/reports.html" "$TMP_DIR/reports.html"
 
 for f in favicon.ico favicon.svg favicon-16x16.png favicon-32x32.png \
           apple-touch-icon.png android-chrome-192x192.png android-chrome-512x512.png \
