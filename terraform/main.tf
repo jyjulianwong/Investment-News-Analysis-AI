@@ -301,6 +301,10 @@ resource "aws_lambda_function" "agent" {
       SEARCH_EVALUATOR_MIN_DOMAINS = var.evaluator_min_domains
 
       MARKET_DATA_MAX_TOOL_CALLS = var.market_data_max_tool_calls
+
+      MRD_API_BASE_URL            = var.mrd_api_base_url
+      MRD_MODEL_NAME              = var.mrd_model_name
+      MRD_REQUEST_TIMEOUT_SECONDS = var.mrd_request_timeout_seconds
     }
   }
 

@@ -1,3 +1,4 @@
+from mrd_schema import MarketRegimeDetectorData
 from pydantic import BaseModel, Field
 
 
@@ -25,6 +26,8 @@ class AgentState(BaseModel):
     """
 
     snippets: list[str] = Field(default_factory=list)
+    # Written by data_fetcher; None if MRD was unreachable or failed validation.
+    market_regime_detector_data: MarketRegimeDetectorData | None = None
     queries: list[str] = Field(default_factory=list)
     search_results: list[SearchResult] = Field(default_factory=list)
     search_attempt: int = 0

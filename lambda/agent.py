@@ -3,7 +3,8 @@ import warnings
 
 import boto3
 import markdown
-from helpers import PROMPTS_ENV, today_utc
+from helpers import DISCLAIMER_TEXT, PROMPTS_ENV, today_utc
+from nodes.data_fetcher import build_data_fetcher_node
 from nodes.email_newsletter_search import build_email_newsletter_search_node
 from nodes.market_analyst import build_market_analyst_node
 from nodes.market_data_search import build_market_data_search_node
@@ -92,6 +93,13 @@ h2 { color: #2c5f8a; margin-top: 2em; }
 h3 { color: #3a7ab8; }
 code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
 blockquote { border-left: 4px solid #ccc; margin-left: 0; padding-left: 16px; color: #555; }
+.ina-disclaimer {
+  font-size: 7pt;
+  line-height: 1.4;
+  color: #666;
+  margin-top: 2em;
+}
+.ina-disclaimer small { font-size: inherit; }
 .ina-market-data {
   color: #888;
   background-color: #eeeeee;
@@ -263,6 +271,16 @@ def _build_graph(
         ),
     )
     graph.add_node("news_snippet_getter", build_news_snippet_getter_node(_s3, SOURCES_BUCKET))
+    graph.add_node(
+        "data_fetcher",
+        build_data_fetcher_node(
+            os.environ.get(
+                "MRD_API_BASE_URL", "https://6nbosjpuc9.execute-api.eu-west-2.amazonaws.com"
+            ),
+            os.environ.get("MRD_MODEL_NAME", "allweather-hmm2naive-us"),
+            float(os.environ.get("MRD_REQUEST_TIMEOUT_SECONDS", "15")),
+        ),
+    )
     graph.add_node("query_generation", build_query_generation_node(main_llm, system_prompt))
     graph.add_node("web_search", build_web_search_node(search_providers, search_workers))
     graph.add_node(
@@ -281,7 +299,8 @@ def _build_graph(
 
     graph.set_entry_point("email_newsletter_search")
     graph.add_edge("email_newsletter_search", "news_snippet_getter")
-    graph.add_edge("news_snippet_getter", "query_generation")
+    graph.add_edge("news_snippet_getter", "data_fetcher")
+    graph.add_edge("data_fetcher", "query_generation")
     graph.add_edge("query_generation", "web_search")
     graph.add_edge("web_search", "search_evaluator")
     graph.add_conditional_edges(
@@ -331,6 +350,7 @@ def handler(event, context):
     # rather than this being a pre-processing step outside the graph.
     initial_state = {
         "snippets": [],
+        "market_regime_detector_data": None,
         "queries": [],
         "search_results": [],
         "search_attempt": 0,
@@ -342,7 +362,14 @@ def handler(event, context):
         "report_approved": False,
     }
     final_state = _graph.invoke(initial_state)
-    md_text = final_state["report"]
+    # Appended here, after report_validator, rather than by the LLM or an
+    # earlier node, so no model output or deterministic rewrite can alter the
+    # mandated wording. A raw HTML block renders small in both the PDF and
+    # Markdown viewers.
+    md_text = (
+        f"{final_state['report']}\n\n"
+        f'<p class="ina-disclaimer"><small>{DISCLAIMER_TEXT}</small></p>\n'
+    )
 
     pdf_bytes = _md_to_pdf(md_text)
     _upload_report(today, md_text, pdf_bytes)
