@@ -149,14 +149,15 @@
       border-radius: 9999px;
       text-decoration: none;
       font-weight: 600;
-      transition: transform 0.2s var(--ias-ease-out-expo), opacity 0.2s ease, border-color 0.2s ease;
+      transition: transform 0.2s var(--ias-ease-out-expo), background 0.2s ease, border-color 0.2s ease;
     }
     .report-links a:hover { transform: translateY(-1px); }
     .btn-pdf {
-      background: linear-gradient(120deg, var(--ias-gold-soft) 0%, var(--ias-gold) 60%, var(--ias-gold-deep) 100%);
-      color: #1a1203;
+      background: rgba(231, 196, 126, 0.08);
+      color: var(--ias-gold);
+      border: 1px solid rgba(231, 196, 126, 0.35);
     }
-    .btn-pdf:hover { opacity: 0.92; }
+    .btn-pdf:hover { background: rgba(231, 196, 126, 0.16); border-color: var(--ias-gold); }
     .btn-md {
       background: rgba(255, 255, 255, 0.04);
       color: #cbd5e1;
