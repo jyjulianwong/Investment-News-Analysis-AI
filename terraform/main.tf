@@ -343,16 +343,16 @@ resource "aws_lambda_permission" "eventbridge" {
 }
 
 # ---------------------------------------------------------------------------
-# Lambda — server (zip): the FastAPI snippet-ingest API (server/), wrapped
-# with Mangum. Its execution role replaces the static access key it used to
-# need while it ran on Render.
+# Lambda — server (zip)
+# ---------------------------------------------------------------------------
+# The FastAPI snippet-ingest API (server/), wrapped with Mangum. Its execution
+# role replaces the static access key it used to need while it ran on Render.
 #
 # Terraform's zip only contains server/'s own .py files, no dependencies —
 # enough for the first `terraform apply` to succeed, same placeholder pattern
 # as Obsidian-Server and Market-Regime-Detector. CI/CD packages the real
 # dependency-inclusive zip (scripts/package_lambda.sh) and pushes it via
 # `update-function-code`.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "server_lambda" {
   name               = "${local.scoped_prefix}-server-lambda-role"
@@ -418,15 +418,14 @@ resource "aws_cloudwatch_log_group" "server" {
 }
 
 # ---------------------------------------------------------------------------
-# API Gateway — public HTTP API in front of the server Lambda.
-#
+# API Gateway — public HTTP API in front of the server Lambda
+# ---------------------------------------------------------------------------
 # Not a Lambda Function URL: Market-Regime-Detector found its AWS
 # Organization's SCP denies anonymous lambda:InvokeFunctionUrl calls, while API
 # Gateway invokes through lambda:InvokeFunction as the apigateway.amazonaws.com
 # service principal, which that guardrail doesn't cover. Same AWS_PROXY HTTP
 # API pattern as Market-Regime-Detector's server API. CORS is handled by the
 # app's own CORSMiddleware, so the API has no cors_configuration of its own.
-# ---------------------------------------------------------------------------
 
 resource "aws_apigatewayv2_api" "server" {
   name          = "${local.scoped_prefix}-server-api"
