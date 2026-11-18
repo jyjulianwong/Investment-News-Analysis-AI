@@ -1,5 +1,5 @@
 output "s3_sources_bucket_name" {
-  description = "S3 bucket where the Render server writes daily news snippets"
+  description = "S3 bucket where the server Lambda writes daily news snippets"
   value       = aws_s3_bucket.sources.bucket
 }
 
@@ -23,24 +23,12 @@ output "lambda_function_name" {
   value       = aws_lambda_function.agent.function_name
 }
 
-output "server_access_key_id" {
-  description = "AWS access key ID for the Render server IAM user — set as RENDER env var AWS_ACCESS_KEY_ID"
-  value       = aws_iam_access_key.server.id
+output "server_lambda_function_name" {
+  description = "Server Lambda function name — for CI/CD update-function-code"
+  value       = aws_lambda_function.server.function_name
 }
 
-output "server_secret_access_key" {
-  description = "AWS secret access key for the Render server IAM user — set as RENDER env var AWS_SECRET_ACCESS_KEY"
-  value       = aws_iam_access_key.server.secret
-  sensitive   = true
-}
-
-output "github_actions_access_key_id" {
-  description = "AWS access key ID for GitHub Actions — store as GitHub secret AWS_ACCESS_KEY_ID"
-  value       = aws_iam_access_key.github_actions.id
-}
-
-output "github_actions_secret_access_key" {
-  description = "AWS secret for GitHub Actions — store as GitHub secret AWS_SECRET_ACCESS_KEY"
-  value       = aws_iam_access_key.github_actions.secret
-  sensitive   = true
+output "server_api_url" {
+  description = "Public API Gateway URL for the snippet-ingest server — client/index.html and scripts/run_local_client.sh should point here"
+  value       = aws_apigatewayv2_api.server.api_endpoint
 }

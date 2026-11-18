@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TMP_DIR="/tmp/ina-client-local"
 mkdir -p "$TMP_DIR"
 
-sed 's|https://investment-news-analysis-ai.onrender.com|http://localhost:8000|g' \
+sed -E 's|(const API_BASE = )"[^"]*"|\1"http://localhost:8000"|' \
     "$REPO_ROOT/client/index.html" > "$TMP_DIR/index.html"
 
 cp "$REPO_ROOT/client/reports.html" "$TMP_DIR/reports.html"

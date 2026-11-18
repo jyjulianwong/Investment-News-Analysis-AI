@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -19,7 +23,7 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# S3 — Sources bucket (private, Render API writes here)
+# S3 — Sources bucket (private, the server Lambda writes here)
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "sources" {
@@ -339,14 +343,28 @@ resource "aws_lambda_permission" "eventbridge" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM — Render API user (write-only to input bucket)
+# Lambda — server (zip): the FastAPI snippet-ingest API (server/), wrapped
+# with Mangum. Its execution role replaces the static access key it used to
+# need while it ran on Render.
+#
+# Terraform's zip only contains server/'s own .py files, no dependencies —
+# enough for the first `terraform apply` to succeed, same placeholder pattern
+# as Obsidian-Server and Market-Regime-Detector. CI/CD packages the real
+# dependency-inclusive zip (scripts/package_lambda.sh) and pushes it via
+# `update-function-code`.
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_user" "server" {
-  name = "${local.scoped_prefix}-server-user"
+resource "aws_iam_role" "server_lambda" {
+  name               = "${local.scoped_prefix}-server-lambda-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
-data "aws_iam_policy_document" "server" {
+resource "aws_iam_role_policy_attachment" "server_lambda_basic" {
+  role       = aws_iam_role.server_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data "aws_iam_policy_document" "server_lambda_permissions" {
   statement {
     sid    = "WriteSourcesBucket"
     effect = "Allow"
@@ -357,124 +375,88 @@ data "aws_iam_policy_document" "server" {
   }
 }
 
-resource "aws_iam_user_policy" "server" {
-  name   = "${local.scoped_prefix}-server-user-policy"
-  user   = aws_iam_user.server.name
-  policy = data.aws_iam_policy_document.server.json
+resource "aws_iam_role_policy" "server_lambda_permissions" {
+  name   = "${local.scoped_prefix}-server-lambda-permissions"
+  role   = aws_iam_role.server_lambda.id
+  policy = data.aws_iam_policy_document.server_lambda_permissions.json
 }
 
-resource "aws_iam_access_key" "server" {
-  user = aws_iam_user.server.name
+data "archive_file" "server_src" {
+  type        = "zip"
+  source_dir  = "${path.module}/../server"
+  excludes    = ["build", ".venv", "__pycache__"]
+  output_path = "${path.module}/.placeholder-server-lambda.zip"
 }
 
-# ---------------------------------------------------------------------------
-# IAM — GitHub Actions user (Terraform apply + ECR push + Lambda update)
-# ---------------------------------------------------------------------------
+resource "aws_lambda_function" "server" {
+  function_name    = "${local.scoped_prefix}-server"
+  role             = aws_iam_role.server_lambda.arn
+  runtime          = "python3.12"
+  handler          = "main.handler"
+  filename         = data.archive_file.server_src.output_path
+  source_code_hash = data.archive_file.server_src.output_base64sha256
+  timeout          = 10
+  memory_size      = 256
 
-resource "aws_iam_user" "github_actions" {
-  name = "${local.scoped_prefix}-github-actions-user"
-}
-
-data "aws_iam_policy_document" "github_actions" {
-  statement {
-    sid    = "ECRAuth"
-    effect = "Allow"
-    actions = [
-      "ecr:GetAuthorizationToken",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "ECRPush"
-    effect = "Allow"
-    actions = [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:CompleteLayerUpload",
-      "ecr:InitiateLayerUpload",
-      "ecr:PutImage",
-      "ecr:UploadLayerPart",
-      "ecr:DescribeRepositories",
-    ]
-    resources = [aws_ecr_repository.lambda.arn]
-  }
-
-  statement {
-    sid    = "LambdaUpdate"
-    effect = "Allow"
-    actions = [
-      "lambda:UpdateFunctionCode",
-      "lambda:GetFunction",
-    ]
-    resources = [aws_lambda_function.agent.arn]
-  }
-
-  statement {
-    sid    = "TerraformState"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      "arn:aws:s3:::${local.global_prefix}-terraform-state",
-      "arn:aws:s3:::${local.global_prefix}-terraform-state/*",
-    ]
-  }
-
-  statement {
-    sid    = "TerraformLock"
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:DeleteItem",
-    ]
-    resources = ["arn:aws:dynamodb:${var.aws_region}:*:table/${local.scoped_prefix}-terraform-lock"]
-  }
-
-  # Regional Terraform apply permissions
-  statement {
-    sid    = "TerraformApplyRegional"
-    effect = "Allow"
-    actions = [
-      "s3:*",
-      "lambda:*",
-      "ecr:*",
-      "events:*",
-      "ssm:*",
-      "kms:Describe*",
-      "kms:List*",
-      "logs:*",
-    ]
-    resources = ["*"]
-    condition {
-      test     = "StringLike"
-      variable = "aws:RequestedRegion"
-      values   = [var.aws_region]
+  environment {
+    variables = {
+      AWS_S3_SOURCES_BUCKET_NAME = aws_s3_bucket.sources.bucket
+      CLIENT_GITHUB_PAGES_ORIGIN = var.client_github_pages_origin
     }
   }
 
-  # IAM is a global service and does not populate aws:RequestedRegion,
-  # so it must be in its own statement without that condition.
-  statement {
-    sid    = "TerraformApplyIAM"
-    effect = "Allow"
-    actions = [
-      "iam:*",
-    ]
-    resources = ["*"]
+  lifecycle {
+    # CI/CD updates the code with real dependencies bundled in; Terraform
+    # should not revert it to the dependency-less placeholder on next apply.
+    ignore_changes = [filename, source_code_hash]
   }
 }
 
-resource "aws_iam_user_policy" "github_actions" {
-  name   = "${local.scoped_prefix}-github-actions-user-policy"
-  user   = aws_iam_user.github_actions.name
-  policy = data.aws_iam_policy_document.github_actions.json
+resource "aws_cloudwatch_log_group" "server" {
+  name              = "/aws/lambda/${aws_lambda_function.server.function_name}"
+  retention_in_days = 30
 }
 
-resource "aws_iam_access_key" "github_actions" {
-  user = aws_iam_user.github_actions.name
+# ---------------------------------------------------------------------------
+# API Gateway — public HTTP API in front of the server Lambda.
+#
+# Not a Lambda Function URL: Market-Regime-Detector found its AWS
+# Organization's SCP denies anonymous lambda:InvokeFunctionUrl calls, while API
+# Gateway invokes through lambda:InvokeFunction as the apigateway.amazonaws.com
+# service principal, which that guardrail doesn't cover. Same AWS_PROXY HTTP
+# API pattern as Market-Regime-Detector's server API. CORS is handled by the
+# app's own CORSMiddleware, so the API has no cors_configuration of its own.
+# ---------------------------------------------------------------------------
+
+resource "aws_apigatewayv2_api" "server" {
+  name          = "${local.scoped_prefix}-server-api"
+  protocol_type = "HTTP"
+}
+
+resource "aws_apigatewayv2_integration" "server" {
+  api_id                 = aws_apigatewayv2_api.server.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.server.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "server_default" {
+  api_id             = aws_apigatewayv2_api.server.id
+  route_key          = "$default"
+  target             = "integrations/${aws_apigatewayv2_integration.server.id}"
+  authorization_type = "NONE"
+}
+
+resource "aws_apigatewayv2_stage" "server_default" {
+  api_id      = aws_apigatewayv2_api.server.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+resource "aws_lambda_permission" "apigateway_server" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.server.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.server.execution_arn}/*/*"
 }

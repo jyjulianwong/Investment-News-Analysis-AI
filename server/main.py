@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import boto3
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 from obsidian_auth import require_device
 from pydantic import BaseModel, field_validator
 
@@ -20,12 +21,9 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-_s3 = boto3.client(
-    "s3",
-    region_name=os.environ.get("AWS_REGION", "eu-west-2"),
-    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-)
+# Credentials come from the default chain: the Lambda execution role when
+# deployed, or whatever `aws sso login` / profile is active when run locally.
+_s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "eu-west-2"))
 _SOURCES_BUCKET = os.environ["AWS_S3_SOURCES_BUCKET_NAME"]
 
 
@@ -78,3 +76,8 @@ def submit_snippet(body: SnippetRequest, device_id: str = Depends(require_device
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# Lambda entry point (terraform/main.tf aws_lambda_function.server's handler);
+# local `uvicorn main:app` serves `app` directly.
+handler = Mangum(app, lifespan="off")

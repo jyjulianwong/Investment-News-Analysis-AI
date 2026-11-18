@@ -10,7 +10,7 @@ I make a habit of reading the news on my way to work every morning... but I know
 
 ```
 GitHub Pages Client
-  └─ POST /snippets ──► Render Server (FastAPI)
+  └─ POST /snippets ──► Server Lambda (FastAPI, via API Gateway)
                               └─► S3 sources bucket  (sources/YYYY-MM-DD/<content-hash>.txt)  ◄──┐
                                         │                                           │ writes newsletter
                               EventBridge (10:00 UTC, Mon–Fri)                      │ snippet, same format
@@ -33,10 +33,10 @@ GitHub Pages Client
 ```
 .
 ├── client/              # Static GitHub Pages site
-├── server/              # Render-hosted FastAPI service
+├── server/              # FastAPI service, deployed as a Lambda (Mangum) behind API Gateway
 ├── lambda/              # Lambda container image + LangGraph agent
 ├── terraform/
-│   ├── bootstrap/       # One-time state infrastructure (run manually once)
+│   ├── bootstrap/       # State bucket, lock table and CI OIDC role (scripts/bootstrap.sh)
 │   └── *.tf             # Main infrastructure (deployed via CI/CD)
 └── .github/workflows/   # CI/CD pipelines
 ```
@@ -51,20 +51,14 @@ Install the AWS CLI before running any of the setup steps below.
 
 ### Configure credentials
 
-Configure the CLI with your AWS credentials once. All commands below use whatever profile is active.
+Sign the CLI in to the account you're deploying into — IAM Identity Center is
+recommended, so nothing on your machine is a long-lived key. All commands below use
+whatever profile is active.
 
 ```bash
-aws configure
-# AWS Access Key ID:     <your key>
-# AWS Secret Access Key: <your secret>
-# Default region name:   eu-west-2
-# Default output format: json
-```
-
-To use a named profile instead of the default:
-```bash
-aws configure --profile ina
-export AWS_PROFILE=ina   # or pass --profile ina to each command
+aws configure sso --profile ina   # once
+aws sso login --profile ina
+export AWS_PROFILE=ina            # or pass --profile ina to each command
 ```
 
 ---
@@ -73,174 +67,71 @@ export AWS_PROFILE=ina   # or pass --profile ina to each command
 
 Complete all the following steps on your local development machine first.
 
-### 1. Find your AWS account ID
+### 1. Bootstrap the account
 
-All Terraform configs require your account ID so they can refuse to apply against the wrong account.
-
-```bash
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-echo $ACCOUNT_ID
-```
-
-### 2. Bootstrap Terraform state infrastructure
-
-These two resources must exist before any CI/CD run can initialise the S3 backend.
+Requires `jyjulianwong/Infrastructure-GitHub`'s bootstrap to have run in the same
+account first — it owns the account-wide GitHub Actions OIDC provider. Then, with
+admin credentials for the target account and an authenticated `gh` CLI:
 
 ```bash
-cd terraform/bootstrap
-terraform init
-terraform apply -var="aws_account_id=$ACCOUNT_ID"
-# Creates: ${ACCOUNT_ID}-jyjulianwong-ina-terraform-state (S3)
-#          jyjulianwong-ina-terraform-lock (DynamoDB)
+scripts/bootstrap.sh
 ```
 
-Verify with the AWS CLI:
-```bash
-aws s3 ls | grep "${ACCOUNT_ID}-jyjulianwong-ina-terraform-state"
-aws dynamodb describe-table --table-name "jyjulianwong-ina-terraform-lock" --query "Table.TableStatus"
-```
+It shows the plan and asks before applying anything, and is safe to re-run. It:
 
-### 2. First-time Terraform apply
-
-The Lambda function requires a container image to already exist in ECR before it can be created.
-This means the initial apply must be done in two phases.
-
-**Phase 1 — create ECR only:**
-
-```bash
-cd terraform
-terraform init \
-  -backend-config="bucket=${ACCOUNT_ID}-jyjulianwong-ina-terraform-state" \
-  -backend-config="dynamodb_table=jyjulianwong-ina-terraform-lock"
-terraform apply \
-  -target=aws_ecr_repository.lambda \
-  -var="aws_account_id=$ACCOUNT_ID" \
-  -var="openrouter_api_key=YOUR_KEY" \
-  -var="tavily_api_key=YOUR_KEY" \
-  -var="email_imap_username=YOUR_GMAIL_ADDRESS" \
-  -var="email_imap_app_password=YOUR_GMAIL_APP_PASSWORD" \
-  -var="client_github_pages_origin=https://YOUR_USERNAME.github.io"
-```
-
-**Phase 2 — build and push the initial Lambda image:**
-
-```bash
-ECR_URL=$(terraform output -raw ecr_repository_url)
-
-aws ecr get-login-password --region eu-west-2 | \
-  docker login --username AWS --password-stdin "$ECR_URL"
-
-docker buildx build \
-  --platform linux/amd64 \
-  --provenance=false \
-  --push \
-  -t "$ECR_URL:latest" \
-  ../lambda/
-```
-
-**Phase 3 — complete the full apply:**
-
-```bash
-terraform apply \
-  -var="aws_account_id=$ACCOUNT_ID" \
-  -var="openrouter_api_key=YOUR_KEY" \
-  -var="tavily_api_key=YOUR_KEY" \
-  -var="email_imap_username=YOUR_GMAIL_ADDRESS" \
-  -var="email_imap_app_password=YOUR_GMAIL_APP_PASSWORD" \
-  -var="client_github_pages_origin=https://YOUR_USERNAME.github.io"
-```
-
-After this, all subsequent infrastructure and Lambda changes are deployed automatically by GitHub Actions on push to `main`.
-
-### 3. Retrieve generated IAM credentials
-
-```bash
-cd terraform
-
-# For GitHub Actions
-terraform output github_actions_access_key_id
-terraform output -raw github_actions_secret_access_key && echo
-
-# For the Render-hosted server
-terraform output server_access_key_id
-terraform output -raw server_secret_access_key && echo
-
-# Print the reports bucket base URL
-terraform output s3_reports_bucket_url
-```
-
-### 4. Add GitHub Actions secrets
-
-In your GitHub repository → **Settings → Secrets and variables → Actions**, add:
+1. applies `terraform/bootstrap` — the Terraform state bucket
+   (`<ACCOUNT_ID>-jyjulianwong-ina-terraform-state`), lock table
+   (`jyjulianwong-ina-terraform-lock`), and the IAM role CI assumes through
+   GitHub's OIDC provider (trusted for this repo's `main` branch and pull requests
+   only — there are no static AWS keys);
+2. moves the bootstrap's own state into the state bucket, so later runs work from
+   any clean clone;
+3. sets the `AWS_ACCOUNT_ID` and `AWS_ROLE_ARN` Actions secrets, prompts for any of
+   the following the repo doesn't have yet, and deletes any leftover
+   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets:
 
 | Secret name                    | Value                                         |
 |--------------------------------|-----------------------------------------------|
-| `AWS_ACCOUNT_ID`               | Your 12-digit AWS account ID                  |
-| `AWS_ACCESS_KEY_ID`            | GitHub Actions IAM user access key ID         |
-| `AWS_SECRET_ACCESS_KEY`        | GitHub Actions IAM user secret access key     |
 | `OPENROUTER_API_KEY`           | Your OpenRouter API key                       |
+| `OPENAI_API_KEY`               | Your OpenAI API key                           |
 | `TAVILY_API_KEY`               | Your Tavily API key (free tier at tavily.com) |
 | `EMAIL_IMAP_USERNAME`          | Gmail address the Lambda logs into via IMAP   |
 | `EMAIL_IMAP_APP_PASSWORD`      | [Gmail App Password](https://myaccount.google.com/apppasswords) for that address |
 | `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`         |
+| `GH_ADMIN_TOKEN`               | Admin-role PAT the version-bump job pushes tags with |
 
-### 5a. Create and deploy the Render service
+The CI role's permissions live in `terraform/bootstrap`, not the main stack, so CI
+can never widen its own access — change them by re-running the script.
 
-Render deploys the server automatically on every push to `main` — no GitHub Actions required.
+### 2. Deploy
 
-1. Go to [render.com](https://render.com) → **New → Web Service**
-2. Connect your GitHub account and select this repository
-3. Configure the service:
+Push to `main` (or re-run the latest `Deploy Infrastructure & Lambda` workflow). CI
+builds everything from an empty account in one run: it creates the ECR repository
+on its own first (AWS requires a container Lambda's image to exist when the
+function is created), pushes the agent Lambda image, applies the whole main stack
+— buckets, SSM parameters, both Lambdas, the server's API Gateway HTTP API and
+the EventBridge schedule — then deploys the real code to both Lambdas.
 
-| Setting           | Value                                    |
-|-------------------|------------------------------------------|
-| **Name**          | Choose any name (e.g. `ina-server`)      |
-| **Region**        | Match your AWS region (e.g. EU West)     |
-| **Branch**        | `main`                                   |
-| **Root directory**| `server`                                 |
-| **Runtime**       | Python 3                                 |
-| **Build command** | `pip install uv && uv sync`              |
-| **Start command** | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+The server (`server/`) runs as a Lambda behind API Gateway, wrapped with Mangum.
+Its execution role grants `s3:PutObject` on the sources bucket's `sources/`
+prefix only — nothing holds a static AWS key.
 
-4. Click **Create Web Service** — Render will build and deploy the server
-5. Copy the service URL (e.g. `https://ina-server.onrender.com`) — you will need it in step 6
+### 3. Update client placeholders
 
-After this initial setup, every push to `main` that touches `server/` will trigger an automatic redeploy.
-
-### 5b. Set Render environment variables
-
-In your Render service dashboard → **Environment**, add:
-
-| Variable                       | Value                                             |
-|--------------------------------|---------------------------------------------------|
-| `AWS_ACCESS_KEY_ID`            | Render server IAM user access key ID              |
-| `AWS_SECRET_ACCESS_KEY`        | Render server IAM user secret access key          |
-| `AWS_REGION`                   | `eu-west-2`                                       |
-| `AWS_S3_SOURCES_BUCKET_NAME`   | Output of `terraform output s3_sources_bucket_name` |
-| `CLIENT_GITHUB_PAGES_ORIGIN`   | e.g. `https://jyjulianwong.github.io`             |
-| `OBSIDIAN_JWKS_URL`            | e.g. `https://jwks.jyjwong.com/.well-known/jwks.json` — Obsidian's public (non-mTLS) JWKS domain; do NOT point this at a path under `auth.jyjwong.com`, which requires a client certificate this server doesn't have |
-
-Render **start command:**
-```
-uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-Render **root directory:** `server`
-
-### 6. Update client placeholders
-
-In `client/index.html`, replace:
-```js
-const API_BASE = "https://your-render-app.onrender.com";
-```
-with your actual Render service URL.
-
-In `client/reports.html`, replace the placeholder `S3_BASE` with the value printed by:
+In `client/index.html`, set `API_BASE` to the server's API Gateway URL:
 ```bash
-terraform output s3_reports_bucket_url
+terraform -chdir=terraform output -raw server_api_url
 ```
 
-### 7. Enable GitHub Pages
+In `client/reports.html`, set `S3_BASE` to the reports bucket base URL:
+```bash
+terraform -chdir=terraform output -raw s3_reports_bucket_url
+```
+
+Then, in the server's CORS settings, make sure the `CLIENT_GITHUB_PAGES_ORIGIN`
+secret matches the origin the client is served from.
+
+### 4. Enable GitHub Pages
 
 In GitHub → **Settings → Pages → Source**, set branch to `gh-pages` and directory to `/ (root)`.
 
@@ -360,8 +251,10 @@ aws lambda get-function \
 ## CI/CD
 
 ### `deploy-terraform.yml`
-- **On PR** (touching `terraform/` or `lambda/`): runs `terraform plan` and posts the output as a PR comment.
-- **On merge to `main`**: runs `terraform apply`, builds and pushes the Lambda Docker image to ECR, then calls `aws lambda update-function-code` to activate the new image.
+- **On PR** (touching `terraform/`, `lambda/` or `server/`): runs `terraform plan` and posts the output as a PR comment.
+- **On merge to `main`**: ensures the ECR repository exists, builds and pushes the agent Lambda's Docker image to it, runs `terraform apply`, calls `aws lambda update-function-code` to activate the new image, then packages the server Lambda (`scripts/package_lambda.sh`) and deploys it the same way.
+
+Both jobs authenticate to AWS by assuming `AWS_ROLE_ARN` through GitHub's OIDC provider (`id-token: write`) — no AWS access keys are stored anywhere.
 
 ### `deploy-client.yml`
 - **On merge to `main`** (touching `client/`): publishes the `client/` directory to the `gh-pages` branch via `peaceiris/actions-gh-pages`.
@@ -373,11 +266,11 @@ aws lambda get-function \
 ### Server
 
 ```bash
-# ACCOUNT_ID must be set — see step 1 of Initial Setup
+# Uses your active AWS credentials (e.g. `aws sso login`)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 cd server
 uv sync
-AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
-  AWS_S3_SOURCES_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
+AWS_S3_SOURCES_BUCKET_NAME="${ACCOUNT_ID}-jyjulianwong-ina-news-sources" \
   CLIENT_GITHUB_PAGES_ORIGIN=http://localhost:3000 uv run uvicorn main:app --reload --port 8000
 ```
 
@@ -388,7 +281,7 @@ For end-to-end integration testing, use `./scripts/run_local_lambda.sh` — it b
 To test the Lambda runtime interface emulator (RIE) manually instead:
 
 ```bash
-# ACCOUNT_ID must be set — see step 1 of Initial Setup
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 cd lambda
 docker buildx build --platform linux/amd64 --provenance=false --load -t ina-lambda-agent-test .
 docker run -p 9000:8080 \
@@ -401,8 +294,8 @@ docker run -p 9000:8080 \
   -e "SSM_TAVILY_PARAM=/jyjulianwong-ina/tavily_api_key" \
   -e "SSM_EMAIL_IMAP_USERNAME_PARAM=/jyjulianwong-ina/email_imap_username" \
   -e "SSM_EMAIL_IMAP_PASSWORD_PARAM=/jyjulianwong-ina/email_imap_app_password" \
-  -e AWS_ACCESS_KEY_ID=... \
-  -e AWS_SECRET_ACCESS_KEY=... \
+  -v "$HOME/.aws:/root/.aws:ro" \
+  -e AWS_PROFILE="${AWS_PROFILE:-default}" \
   ina-lambda-agent-test
 
 # In a second terminal:

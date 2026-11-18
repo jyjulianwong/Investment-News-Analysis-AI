@@ -50,7 +50,7 @@ variable "email_imap_app_password" {
 }
 
 variable "client_github_pages_origin" {
-  description = "The GitHub Pages origin allowed for CORS on the Render API, e.g. https://jyjulianwong.github.io"
+  description = "The GitHub Pages origin allowed for CORS on the server API, e.g. https://jyjulianwong.github.io"
   type        = string
 }
 

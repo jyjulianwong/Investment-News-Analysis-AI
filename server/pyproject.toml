@@ -1,10 +1,15 @@
 [project]
 name = "ina-server"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "boto3>=1.35,<1.36",
     "fastapi>=0.115,<0.116",
+    "mangum>=0.17,<0.18",
     "pyjwt[crypto]>=2.9,<3.0",
+]
+
+[dependency-groups]
+dev = [
     "uvicorn[standard]>=0.32,<0.33",
 ]

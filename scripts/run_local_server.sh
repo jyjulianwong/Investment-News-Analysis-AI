@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Run the FastAPI server locally on port 8000 with the date frozen to 2000-01-01.
-# Requires AWS credentials in the environment (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).
+# Uses your active AWS credentials (e.g. after `aws sso login`, or AWS_PROFILE)
+# through boto3's default chain — the same code the server Lambda runs with its
+# execution role.
 #
 # Usage:
-#   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... ./scripts/run_local_server.sh
+#   ./scripts/run_local_server.sh
 
 set -euo pipefail
 
