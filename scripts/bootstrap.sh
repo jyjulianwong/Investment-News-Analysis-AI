@@ -34,8 +34,8 @@ EXTRA_SECRETS=(
 )
 NEXT_STEPS="Next: trigger your GitHub Actions CI/CD workflow to deploy the rest of the
 infrastructure. Its first run creates the ECR repository, pushes the agent Lambda
-image, applies the whole main stack and deploys the server Lambda. Then point
-client/index.html's API_BASE at:
+image, applies the whole main stack and deploys the server Lambda. Once that run
+has finished, point client/index.html's API_BASE at (after the init above):
   terraform -chdir=terraform output -raw server_api_url"
 
 REGION="eu-west-2" # must match terraform/backend.tf and the workflows' AWS_REGION
@@ -231,6 +231,14 @@ step "Bootstrapped $GITHUB_REPOSITORY into AWS account $ACCOUNT_ID"
 echo "  State bucket: s3://$STATE_BUCKET"
 echo "  Lock table:   $LOCK_TABLE"
 echo "  CI role:      $ROLE_ARN"
+echo
+# terraform/ (the main stack) keeps its own backend settings in .terraform/;
+# a checkout that last ran against another account still points there.
+echo "To use terraform/ (the main stack) from this checkout, e.g. for terraform output,"
+echo "point it at this account's state first:"
+echo "  terraform -chdir=terraform init -reconfigure \\"
+echo "    -backend-config=\"bucket=$STATE_BUCKET\" \\"
+echo "    -backend-config=\"dynamodb_table=$LOCK_TABLE\""
 if [[ -n ${NEXT_STEPS:-} ]]; then
   echo
   echo "$NEXT_STEPS"
