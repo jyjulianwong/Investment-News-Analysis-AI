@@ -7,22 +7,43 @@ on:
       - ".github/**"
       - "terraform/**"
       - "lambda/**"
+      - "server/**"
+      - "scripts/package_lambda.sh"
   pull_request:
     branches: [main]
     paths:
       - ".github/**"
       - "terraform/**"
       - "lambda/**"
+      - "server/**"
+      - "scripts/package_lambda.sh"
 
 env:
   AWS_REGION: eu-west-2
   TF_VERSION: "1.9.0"
 
 jobs:
+  scan-vulnerabilities:
+    name: Scan Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   terraform-plan:
     name: Terraform Plan
+    needs: scan-vulnerabilities
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write # OIDC: assume AWS_ROLE_ARN
 
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +51,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region:     ${{ env.AWS_REGION }}
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -105,6 +125,7 @@ jobs:
 
   version_bump:
     name: Calendar Version Bump
+    needs: scan-vulnerabilities
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
@@ -139,6 +160,18 @@ jobs:
     needs: [version_bump]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write # OIDC: assume AWS_ROLE_ARN
+    # Required (no-default) Terraform variables, shared by both applies below.
+    env:
+      TF_VAR_aws_account_id:             ${{ secrets.AWS_ACCOUNT_ID }}
+      TF_VAR_openrouter_api_key:         ${{ secrets.OPENROUTER_API_KEY }}
+      TF_VAR_openai_api_key:             ${{ secrets.OPENAI_API_KEY }}
+      TF_VAR_tavily_api_key:             ${{ secrets.TAVILY_API_KEY }}
+      TF_VAR_email_imap_username:        ${{ secrets.EMAIL_IMAP_USERNAME }}
+      TF_VAR_email_imap_app_password:    ${{ secrets.EMAIL_IMAP_APP_PASSWORD }}
+      TF_VAR_client_github_pages_origin: ${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -148,13 +181,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      # -----------------------------------------------------------------------
-      # Terraform apply
-      # -----------------------------------------------------------------------
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region:     ${{ env.AWS_REGION }}
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -172,17 +200,50 @@ jobs:
             -backend-config="bucket=$TF_BACKEND_BUCKET" \
             -backend-config="dynamodb_table=$TF_BACKEND_TABLE"
 
+      # -----------------------------------------------------------------------
+      # Build & push the agent Lambda container image
+      # -----------------------------------------------------------------------
+      # Runs BEFORE the full apply: AWS validates that a container Lambda's
+      # image exists in ECR at function-creation time, so in a fresh account the
+      # ECR repository and an image must exist before Terraform can create
+      # aws_lambda_function.agent. The targeted apply is a no-op once the
+      # repository exists.
+
+      - name: Ensure ECR repository exists
+        working-directory: terraform
+        run: |
+          terraform apply \
+            -target=aws_ecr_repository.lambda \
+            -auto-approve \
+            -no-color
+
+      - name: Log in to Amazon ECR
+        id: ecr_login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Lambda image
+        env:
+          ECR_URL: ${{ steps.ecr_login.outputs.registry }}/jyjulianwong-ina-lambda-agent
+          IMAGE_TAG: ${{ github.sha }}
+          INA_VERSION: ${{ needs.version_bump.outputs.version }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --push \
+            --build-arg INA_VERSION="$INA_VERSION" \
+            -t "$ECR_URL:$IMAGE_TAG" \
+            -t "$ECR_URL:latest" \
+            lambda/
+
+      # -----------------------------------------------------------------------
+      # Terraform apply
+      # -----------------------------------------------------------------------
+
       - name: Terraform Apply
         working-directory: terraform
         run: |
           terraform apply \
-            -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
-            -var="openrouter_api_key=${{ secrets.OPENROUTER_API_KEY }}" \
-            -var="openai_api_key=${{ secrets.OPENAI_API_KEY }}" \
-            -var="tavily_api_key=${{ secrets.TAVILY_API_KEY }}" \
-            -var="email_imap_username=${{ secrets.EMAIL_IMAP_USERNAME }}" \
-            -var="email_imap_app_password=${{ secrets.EMAIL_IMAP_APP_PASSWORD }}" \
-            -var="client_github_pages_origin=${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}" \
             -var="llm_provider=${{ vars.LLM_PROVIDER || 'openrouter' }}" \
             -var="openrouter_model=${{ vars.OPENROUTER_MODEL || 'google/gemini-3-flash-preview' }}" \
             -var="openai_model=${{ vars.OPENAI_MODEL || 'gpt-6-luna' }}" \
@@ -212,32 +273,10 @@ jobs:
         run: |
           echo "ecr_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "lambda_name=$(terraform output -raw lambda_function_name)" >> "$GITHUB_OUTPUT"
+          echo "server_lambda_name=$(terraform output -raw server_lambda_function_name)" >> "$GITHUB_OUTPUT"
 
       # -----------------------------------------------------------------------
-      # Build & push Lambda container image
-      # -----------------------------------------------------------------------
-
-      - name: Log in to Amazon ECR
-        id: ecr_login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push Lambda image
-        env:
-          ECR_URL: ${{ steps.tf_outputs.outputs.ecr_url }}
-          IMAGE_TAG: ${{ github.sha }}
-          INA_VERSION: ${{ needs.version_bump.outputs.version }}
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            --provenance=false \
-            --push \
-            --build-arg INA_VERSION="$INA_VERSION" \
-            -t "$ECR_URL:$IMAGE_TAG" \
-            -t "$ECR_URL:latest" \
-            lambda/
-
-      # -----------------------------------------------------------------------
-      # Update Lambda to use the new image
+      # Update the agent Lambda to use the new image
       # -----------------------------------------------------------------------
 
       - name: Update Lambda function code
@@ -249,4 +288,28 @@ jobs:
           aws lambda update-function-code \
             --function-name "$LAMBDA_NAME" \
             --image-uri "$ECR_URL:$IMAGE_TAG" \
+            --region "$AWS_REGION"
+
+      # -----------------------------------------------------------------------
+      # Build & deploy the real server Lambda zip (with dependencies)
+      # -----------------------------------------------------------------------
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Package server Lambda
+        run: ./scripts/package_lambda.sh
+
+      - name: Update server Lambda function code
+        env:
+          SERVER_LAMBDA: ${{ steps.tf_outputs.outputs.server_lambda_name }}
+        run: |
+          aws lambda update-function-code \
+            --function-name "$SERVER_LAMBDA" \
+            --zip-file fileb://server/build/lambda.zip \
             --region "$AWS_REGION"
