@@ -197,7 +197,7 @@ variable "market_data_max_tool_calls" {
 variable "mrd_api_base_url" {
   description = "Base URL of the Market Regime Detector read-only API (no trailing path), used by the Lambda's data_fetcher step"
   type        = string
-  default     = "https://6nbosjpuc9.execute-api.eu-west-2.amazonaws.com"
+  default     = "https://0ltgfa46i0.execute-api.eu-west-2.amazonaws.com"
 }
 
 variable "mrd_model_name" {

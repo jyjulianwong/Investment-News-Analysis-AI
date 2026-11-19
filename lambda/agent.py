@@ -275,7 +275,7 @@ def _build_graph(
         "data_fetcher",
         build_data_fetcher_node(
             os.environ.get(
-                "MRD_API_BASE_URL", "https://6nbosjpuc9.execute-api.eu-west-2.amazonaws.com"
+                "MRD_API_BASE_URL", "https://0ltgfa46i0.execute-api.eu-west-2.amazonaws.com"
             ),
             os.environ.get("MRD_MODEL_NAME", "allweather-hmm2naive-us"),
             float(os.environ.get("MRD_REQUEST_TIMEOUT_SECONDS", "15")),
