@@ -211,3 +211,19 @@ variable "mrd_request_timeout_seconds" {
   type        = number
   default     = 15
 }
+
+# ---------------------------------------------------------------------------
+# Schedule and alerting
+# ---------------------------------------------------------------------------
+
+variable "agent_schedule_expression" {
+  description = "EventBridge Rule cron expression for the daily agent run — 10:00 UTC, weekdays"
+  type        = string
+  default     = "cron(0 10 ? * MON-FRI *)"
+}
+
+variable "alert_email" {
+  description = "Email address subscribed to the SNS topic for agent Lambda failure alarms and DLQ messages"
+  type        = string
+  default     = "julianwong2000@gmail.com"
+}

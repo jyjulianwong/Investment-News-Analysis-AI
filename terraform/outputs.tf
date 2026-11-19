@@ -32,3 +32,8 @@ output "server_api_url" {
   description = "Public API Gateway URL for the snippet-ingest server — client/index.html and scripts/run_local_client.sh should point here"
   value       = aws_apigatewayv2_api.server.api_endpoint
 }
+
+output "alerts_topic_arn" {
+  description = "SNS topic ARN alert_email is subscribed to"
+  value       = aws_sns_topic.alerts.arn
+}

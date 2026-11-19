@@ -104,6 +104,7 @@ jobs:
             -var="evaluator_min_results=${{ vars.SEARCH_EVALUATOR_MIN_RESULTS || '5' }}" \
             -var="evaluator_min_domains=${{ vars.SEARCH_EVALUATOR_MIN_DOMAINS || '3' }}" \
             -var="market_data_max_tool_calls=${{ vars.MARKET_DATA_MAX_TOOL_CALLS || '8' }}" \
+            -var="alert_email=${{ vars.ALERT_EMAIL || 'julianwong2000@gmail.com' }}" \
             -no-color \
             -out=tfplan
         continue-on-error: true
@@ -172,6 +173,7 @@ jobs:
       TF_VAR_email_imap_username:        ${{ secrets.EMAIL_IMAP_USERNAME }}
       TF_VAR_email_imap_app_password:    ${{ secrets.EMAIL_IMAP_APP_PASSWORD }}
       TF_VAR_client_github_pages_origin: ${{ secrets.CLIENT_GITHUB_PAGES_ORIGIN }}
+      TF_VAR_alert_email:                ${{ vars.ALERT_EMAIL || 'julianwong2000@gmail.com' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -264,6 +266,7 @@ jobs:
             -var="evaluator_min_results=${{ vars.SEARCH_EVALUATOR_MIN_RESULTS || '5' }}" \
             -var="evaluator_min_domains=${{ vars.SEARCH_EVALUATOR_MIN_DOMAINS || '3' }}" \
             -var="market_data_max_tool_calls=${{ vars.MARKET_DATA_MAX_TOOL_CALLS || '8' }}" \
+            -var="alert_email=${{ vars.ALERT_EMAIL || 'julianwong2000@gmail.com' }}" \
             -auto-approve \
             -no-color
 

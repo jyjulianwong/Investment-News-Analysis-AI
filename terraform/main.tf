@@ -319,19 +319,57 @@ resource "aws_lambda_function" "agent" {
 }
 
 # ---------------------------------------------------------------------------
-# EventBridge — daily trigger at 10:00 UTC
+# EventBridge — daily trigger at 10:00 UTC (a plain CloudWatch Events Rule,
+# not EventBridge Scheduler; same pattern as Market-Regime-Detector). Failed
+# invocations are retried, then land in an SQS dead-letter queue.
 # ---------------------------------------------------------------------------
+
+resource "aws_sqs_queue" "agent_dlq" {
+  name = "${local.scoped_prefix}-agent-dlq"
+}
+
+data "aws_iam_policy_document" "agent_dlq_policy" {
+  statement {
+    sid    = "AllowEventBridgeSendMessage"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.agent_dlq.arn]
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.agent_daily_noon.arn]
+    }
+  }
+}
+
+resource "aws_sqs_queue_policy" "agent_dlq" {
+  queue_url = aws_sqs_queue.agent_dlq.id
+  policy    = data.aws_iam_policy_document.agent_dlq_policy.json
+}
 
 resource "aws_cloudwatch_event_rule" "agent_daily_noon" {
   name                = "${local.scoped_prefix}-agent-daily-noon"
   description         = "Trigger the '${local.scoped_prefix}-agent' Lambda function at 10:00 UTC on weekdays"
-  schedule_expression = "cron(0 10 ? * MON-FRI *)"
+  schedule_expression = var.agent_schedule_expression
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {
   rule      = aws_cloudwatch_event_rule.agent_daily_noon.name
   target_id = "${local.scoped_prefix}-lambda-agent"
   arn       = aws_lambda_function.agent.arn
+
+  retry_policy {
+    maximum_retry_attempts       = 2
+    maximum_event_age_in_seconds = 3600
+  }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.agent_dlq.arn
+  }
 }
 
 resource "aws_lambda_permission" "eventbridge" {
@@ -340,6 +378,41 @@ resource "aws_lambda_permission" "eventbridge" {
   function_name = aws_lambda_function.agent.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.agent_daily_noon.arn
+}
+
+# ---------------------------------------------------------------------------
+# CloudWatch alarm + SNS — notifies on agent Lambda errors. The same Lambda
+# error that exhausts EventBridge's retry policy and lands a message in the
+# DLQ above is what this alarm fires on — one signal, not two separate things
+# to keep in sync. Same setup as Market-Regime-Detector.
+# ---------------------------------------------------------------------------
+
+resource "aws_sns_topic" "alerts" {
+  name = "${local.scoped_prefix}-alerts"
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+resource "aws_cloudwatch_metric_alarm" "agent_errors" {
+  alarm_name          = "${local.scoped_prefix}-agent-errors"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  alarm_description   = "Triggers when the agent Lambda errors at least once in a 5-minute window"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    FunctionName = aws_lambda_function.agent.function_name
+  }
 }
 
 # ---------------------------------------------------------------------------
