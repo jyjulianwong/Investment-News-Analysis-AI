@@ -158,6 +158,7 @@ def _build_graph(
         os.environ.get(
             "EMAIL_NEWSLETTER_SENDERS",
             "brewmarkets@morningbrew.com,"
+            "morningbrew@mail.sailthru.com,"
             "FT@news-alerts.ft.com:3,"
             "noreply@newsletter.thetimes.com:2,"
             "noreply@newsletter.thetimes.co.uk:2",

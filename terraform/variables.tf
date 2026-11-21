@@ -113,7 +113,7 @@ variable "email_imap_folder" {
 variable "email_newsletter_senders" {
   description = "Comma-separated sender addresses to fetch newsletters from, each optionally suffixed with :count (e.g. foo@bar.com:3) to override how many of that sender's latest messages to pull"
   type        = string
-  default     = "brewmarkets@morningbrew.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2"
+  default     = "brewmarkets@morningbrew.com,morningbrew@mail.sailthru.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2"
 }
 
 variable "email_newsletter_default_fetch_count" {

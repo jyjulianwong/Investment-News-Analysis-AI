@@ -92,7 +92,7 @@ jobs:
             -var="email_imap_host=${{ vars.EMAIL_IMAP_HOST || 'imap.gmail.com' }}" \
             -var="email_imap_port=${{ vars.EMAIL_IMAP_PORT || '993' }}" \
             -var="email_imap_folder=${{ vars.EMAIL_IMAP_FOLDER || 'Newsletters' }}" \
-            -var="email_newsletter_senders=${{ vars.EMAIL_NEWSLETTER_SENDERS || 'brewmarkets@morningbrew.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2' }}" \
+            -var="email_newsletter_senders=${{ vars.EMAIL_NEWSLETTER_SENDERS || 'brewmarkets@morningbrew.com,morningbrew@mail.sailthru.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2' }}" \
             -var="email_newsletter_default_fetch_count=${{ vars.EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT || '1' }}" \
             -var="web_search_providers=${{ vars.WEB_SEARCH_PROVIDERS || 'tavily,ddgs' }}" \
             -var="tavily_max_results=${{ vars.TAVILY_MAX_RESULTS || '10' }}" \
@@ -254,7 +254,7 @@ jobs:
             -var="email_imap_host=${{ vars.EMAIL_IMAP_HOST || 'imap.gmail.com' }}" \
             -var="email_imap_port=${{ vars.EMAIL_IMAP_PORT || '993' }}" \
             -var="email_imap_folder=${{ vars.EMAIL_IMAP_FOLDER || 'Newsletters' }}" \
-            -var="email_newsletter_senders=${{ vars.EMAIL_NEWSLETTER_SENDERS || 'brewmarkets@morningbrew.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2' }}" \
+            -var="email_newsletter_senders=${{ vars.EMAIL_NEWSLETTER_SENDERS || 'brewmarkets@morningbrew.com,morningbrew@mail.sailthru.com,FT@news-alerts.ft.com:3,noreply@newsletter.thetimes.com:2,noreply@newsletter.thetimes.co.uk:2' }}" \
             -var="email_newsletter_default_fetch_count=${{ vars.EMAIL_NEWSLETTER_DEFAULT_FETCH_COUNT || '1' }}" \
             -var="web_search_providers=${{ vars.WEB_SEARCH_PROVIDERS || 'tavily,ddgs' }}" \
             -var="tavily_max_results=${{ vars.TAVILY_MAX_RESULTS || '10' }}" \
